@@ -123,7 +123,11 @@ def init_services():
         kabu_client = MockKabuClient()
     else:
         app_state["simulation_mode"] = False
-        kabu_client = KabuClient()
+        # SAFETY: never hand the raw KabuClient (no live-trading guard) to app_state.
+        # Wrap it in HybridKabuClient, which starts with live_trading=False and only
+        # sends real orders after the settings.py manual toggle calls
+        # enable_live_trading() (which itself requires production env + order password).
+        kabu_client = HybridKabuClient(KabuClient())
         
     # Register Core Services first (Dependencies for TradingService)
     app_state.update({

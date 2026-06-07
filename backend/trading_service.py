@@ -271,7 +271,11 @@ class TradingService:
                 self._log(f"Failed to get price for {symbol}: {e}", "ERROR")
             
             if current_price <= 0:
-                logger.warning(f"[Trading] Skip sell check for {symbol}: price={current_price}")
+                # SAFETY (Critical#2): price fetch failed -> loss-cut CANNOT be evaluated here.
+                # We still skip (avoid mis-ordering on an unknown price), but this position is
+                # left unprotected this cycle and REQUIRES MONITORING until a valid price returns.
+                logger.warning(f"[Trading] Skip sell check for {symbol}: price={current_price} "
+                               f"(loss-cut not evaluated - requires monitoring)")
                 continue
             
             entry_price = pos.get("avg_price", 0)
@@ -302,9 +306,17 @@ class TradingService:
             stepped_trailing_enabled = self.app_state.get("stepped_trailing_enabled", True)
             
             # Apply Sell Strategies
-            # Priority: SteppedTrailing (if enabled) > TakeProfit > TrailingStop > DynamicLossCut
+            # Priority: DynamicLossCut (hard stop, FIRST) > SteppedTrailing (if enabled) > TakeProfit > TrailingStop
+            # SAFETY (Critical#2): Loss-cut is evaluated FIRST so that a sudden drop triggers
+            # the stop-loss before any looser exit strategy can fill above the stop level.
+            # The loop below breaks on the first triggered strategy, so order == priority.
             sell_strategies = []
-            
+
+            # Hard stop: dynamic loss-cut must be the highest-priority sell strategy.
+            sell_strategies.append(
+                DynamicLossCutManager(loss_cut_percent=lc_pct, time_stop_minutes=time_stop_mins)
+            )
+
             if stepped_trailing_enabled:
                 # Stepped Trailing takes priority over fixed TakeProfit
                 sell_strategies.append(
@@ -315,13 +327,10 @@ class TradingService:
                         trailing_step2_trail_pct=st_step2_trail,
                     )
                 )
-            
+
             # Fallback: fixed take-profit (acts as safety net / ceiling)
             sell_strategies.append(TakeProfitManager(take_profit_percent=tp_pct))
             sell_strategies.append(TrailingStopManager(trailing_stop_percent=ts_pct))
-            sell_strategies.append(
-                DynamicLossCutManager(loss_cut_percent=lc_pct, time_stop_minutes=time_stop_mins)
-            )
             
             order_params = None
             triggered_strategy = None
