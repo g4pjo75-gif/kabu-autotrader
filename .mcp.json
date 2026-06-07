@@ -1,0 +1,72 @@
+{
+  "mcpServers": {
+    "cc-grag": {
+      "args": [
+        "mcp"
+      ],
+      "command": "/Users/sato_ryoma/.ccagi/bin/cc-grag",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "cc-vrag": {
+      "args": [
+        "mcp"
+      ],
+      "command": "/Users/sato_ryoma/.ccagi/bin/cc-vrag",
+      "env": {
+        "CCMVEC_TIER": "enterprise",
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "ccagi-tools": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/ccagi-tools-server",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "design-guide-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/design-guide-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "irondome-code-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/irondome-code-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "pil-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/pil-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "q-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/q-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "threejs-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/threejs-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    },
+    "xkoma-mcp": {
+      "args": [],
+      "command": "/Users/sato_ryoma/.ccagi/bin/xkoma-mcp",
+      "env": {
+        "HOME": "/Users/sato_ryoma"
+      }
+    }
+  }
+}

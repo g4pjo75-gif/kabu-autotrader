@@ -1,0 +1,265 @@
+{
+  "projectContext": "kabu-autotrader - CCAGI SDK Project",
+  "workingDirectory": "/Users/sato_ryoma/dev/kabu-autotrader",
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/sato_ryoma/.ccagi/bin/ccagi-sdk statusline",
+    "refreshInterval": 10
+  },
+  "mcpServers": {
+    "ccagi-tools": {
+      "command": "/Users/sato_ryoma/.ccagi/bin/ccagi-tools-server",
+      "args": []
+    }
+  },
+  "preferredStyle": {
+    "language": "TypeScript",
+    "typeMode": "strict",
+    "commitMessage": "conventional",
+    "documentation": "JSDoc",
+    "testing": "Vitest"
+  },
+  "agents": {
+    "coordinator": ".claude/agents/coordinator.md",
+    "codegen": ".claude/agents/codegen.md",
+    "review": ".claude/agents/review.md",
+    "issue": ".claude/agents/issue.md",
+    "pr": ".claude/agents/pr.md",
+    "deployment": ".claude/agents/deployment.md"
+  },
+  "qualityThreshold": {
+    "minScore": 80,
+    "testCoverage": 80,
+    "typeScriptErrors": 0,
+    "eslintErrors": 0
+  },
+  "escalation": {
+    "techLead": "g4pjo75-gif",
+    "po": "g4pjo75-gif",
+    "ciso": "g4pjo75-gif",
+    "cto": "g4pjo75-gif"
+  },
+  "logging": {
+    "directory": ".ai/logs",
+    "format": "LDD",
+    "level": "info"
+  },
+  "commands": {
+    "/add-requirements": ".claude/commands/add-requirements.md",
+    "/adr-create": ".claude/commands/adr-create.md",
+    "/agent-run": ".claude/commands/agent-run.md",
+    "/agent-status": ".claude/commands/agent-status.md",
+    "/ai-code-review": ".claude/commands/ai-code-review.md",
+    "/api-generate": ".claude/commands/api-generate.md",
+    "/aws-fast-deploy": ".claude/commands/aws-fast-deploy.md",
+    "/aws-status": ".claude/commands/aws-status.md",
+    "/benchmark": ".claude/commands/benchmark.md",
+    "/cache-clear": ".claude/commands/cache-clear.md",
+    "/canvas-design": ".claude/commands/canvas-design.md",
+    "/ccagi-auto": ".claude/commands/ccagi-auto.md",
+    "/ccagi-todos": ".claude/commands/ccagi-todos.md",
+    "/codegen-execute": ".claude/commands/codegen-execute.md",
+    "/component-create": ".claude/commands/component-create.md",
+    "/confirm-feature": ".claude/commands/confirm-feature.md",
+    "/create-issue": ".claude/commands/create-issue.md",
+    "/create-ssot-issue": ".claude/commands/create-ssot-issue.md",
+    "/db-backup": ".claude/commands/db-backup.md",
+    "/deploy": ".claude/commands/deploy.md",
+    "/deploy-dev": ".claude/commands/deploy-dev.md",
+    "/deploy-execute": ".claude/commands/deploy-execute.md",
+    "/deploy-prod": ".claude/commands/deploy-prod.md",
+    "/deploy-rollback": ".claude/commands/deploy-rollback.md",
+    "/deploy-status": ".claude/commands/deploy-status.md",
+    "/deps-audit": ".claude/commands/deps-audit.md",
+    "/deps-update": ".claude/commands/deps-update.md",
+    "/design-system": ".claude/commands/design-system.md",
+    "/docker-build": ".claude/commands/docker-build.md",
+    "/docs-generate": ".claude/commands/docs-generate.md",
+    "/env-check": ".claude/commands/env-check.md",
+    "/env-setup": ".claude/commands/env-setup.md",
+    "/environment-diff-check": ".claude/commands/environment-diff-check.md",
+    "/feedback-auto-detect": ".claude/commands/feedback-auto-detect.md",
+    "/fix-build-errors": ".claude/commands/fix-build-errors.md",
+    "/frontend-design": ".claude/commands/frontend-design.md",
+    "/gap-analyze": ".claude/commands/gap-analyze.md",
+    "/generate-app": ".claude/commands/generate-app.md",
+    "/generate-architecture-diagram": ".claude/commands/generate-architecture-diagram.md",
+    "/generate-dataflow-diagram": ".claude/commands/generate-dataflow-diagram.md",
+    "/generate-demo-scenario": ".claude/commands/generate-demo-scenario.md",
+    "/generate-docs": ".claude/commands/generate-docs.md",
+    "/generate-requirements": ".claude/commands/generate-requirements.md",
+    "/generate-sequence-diagram": ".claude/commands/generate-sequence-diagram.md",
+    "/generate-test-accounts": ".claude/commands/generate-test-accounts.md",
+    "/generate-test-design": ".claude/commands/generate-test-design.md",
+    "/generate-test-fixtures": ".claude/commands/generate-test-fixtures.md",
+    "/generate-user-manual": ".claude/commands/generate-user-manual.md",
+    "/git-clean": ".claude/commands/git-clean.md",
+    "/git-sync": ".claude/commands/git-sync.md",
+    "/health-check": ".claude/commands/health-check.md",
+    "/implement-app": ".claude/commands/implement-app.md",
+    "/incident-report": ".claude/commands/incident-report.md",
+    "/lint-fix": ".claude/commands/lint-fix.md",
+    "/logs": ".claude/commands/logs.md",
+    "/migration-create": ".claude/commands/migration-create.md",
+    "/migration-run": ".claude/commands/migration-run.md",
+    "/mock-detector": ".claude/commands/mock-detector.md",
+    "/monitoring-setup": ".claude/commands/monitoring-setup.md",
+    "/npm-publisher": ".claude/commands/npm-publisher.md",
+    "/optimize-design": ".claude/commands/optimize-design.md",
+    "/optimize-resources": ".claude/commands/optimize-resources.md",
+    "/performance-analyze": ".claude/commands/performance-analyze.md",
+    "/plan-project": ".claude/commands/plan-project.md",
+    "/pr-create": ".claude/commands/pr-create.md",
+    "/pr-list": ".claude/commands/pr-list.md",
+    "/quality-score": ".claude/commands/quality-score.md",
+    "/rag-save": ".claude/commands/rag-save.md",
+    "/rag-search": ".claude/commands/rag-search.md",
+    "/refactor": ".claude/commands/refactor.md",
+    "/release-prepare": ".claude/commands/release-prepare.md",
+    "/release-publish": ".claude/commands/release-publish.md",
+    "/responsive-design": ".claude/commands/responsive-design.md",
+    "/review-execute": ".claude/commands/review-execute.md",
+    "/run-predeploy-verification": ".claude/commands/run-predeploy-verification.md",
+    "/sdk-publish": ".claude/commands/sdk-publish.md",
+    "/sdk-release-test": ".claude/commands/sdk-release-test.md",
+    "/security-scan": ".claude/commands/security-scan.md",
+    "/service-create": ".claude/commands/service-create.md",
+    "/session-end": ".claude/commands/session-end.md",
+    "/setup-infrastructure": ".claude/commands/setup-infrastructure.md",
+    "/setup-pipeline": ".claude/commands/setup-pipeline.md",
+    "/spec-create": ".claude/commands/spec-create.md",
+    "/ssh-connect": ".claude/commands/ssh-connect.md",
+    "/sync-feedback": ".claude/commands/sync-feedback.md",
+    "/test": ".claude/commands/test.md",
+    "/tmux-control": ".claude/commands/tmux-control.md",
+    "/type-check": ".claude/commands/type-check.md",
+    "/ui-skills": ".claude/commands/ui-skills.md",
+    "/ui-styling": ".claude/commands/ui-styling.md",
+    "/user-feedback": ".claude/commands/user-feedback.md",
+    "/ux-review": ".claude/commands/ux-review.md",
+    "/verify": ".claude/commands/verify.md",
+    "/verify-app": ".claude/commands/verify-app.md"
+  },
+  "shikigaku": {
+    "principles": [
+      "責任と権限の明確化",
+      "結果重視",
+      "階層の明確化",
+      "誤解・錯覚の排除",
+      "感情的判断の排除"
+    ],
+    "labels": 60,
+    "hierarchy": "Human → Coordinator → Specialist"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin-conflict-detector.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/agent-pipeline-guide.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start-cci-refresh.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-end.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/git-ops-validator.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/agent-logger.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/codegen-review-trigger.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/feedback-ssot-sync.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/format-check.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/user-prompt-cci-freshness.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/cci-analyze-on-change.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

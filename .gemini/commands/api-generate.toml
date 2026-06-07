@@ -1,0 +1,5 @@
+description = "新しいAPIエンドポイントを生成します。"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

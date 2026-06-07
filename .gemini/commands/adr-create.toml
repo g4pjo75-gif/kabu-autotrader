@@ -1,0 +1,5 @@
+description = "architecture agentを起動して、以下の形式でADRを作成してくだ…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

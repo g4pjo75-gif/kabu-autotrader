@@ -1,0 +1,5 @@
+description = "入力ソース（URL、GitHub Issue、要件定義書）から完全なアプ…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

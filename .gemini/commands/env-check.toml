@@ -1,0 +1,5 @@
+description = "cat .env | grep -v \"^#\" | grep -v \"^$"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

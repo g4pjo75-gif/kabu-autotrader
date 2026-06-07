@@ -1,0 +1,5 @@
+description = "Closed Issueの未消化チェックリスト項目を走査し、ギャップ…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

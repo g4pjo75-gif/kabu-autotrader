@@ -1,0 +1,5 @@
+description = "セッション終了時にRAGメモリに学んだ情報を保存します。"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

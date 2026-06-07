@@ -1,0 +1,5 @@
+description = "SSOT Issueから未適用フィードバックを取得し、**適切なPhaseか…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

@@ -1,0 +1,5 @@
+description = "単一APIルートファイルのセキュリティ欠陥を分類"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

@@ -1,0 +1,5 @@
+description = "Phase 4 実装フェーズでUIスタイリングを実装するコマンド。"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

@@ -1,0 +1,5 @@
+description = "CCAGI SDK Phase 6 コマンド (CMD-020)"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

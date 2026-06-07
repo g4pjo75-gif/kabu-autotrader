@@ -1,0 +1,354 @@
+# CCAGI Configuration v1.0
+# Customer Cloud AGI - 完全自律型AIエージェントシステム
+
+# プロジェクト名（init時に自動設定）
+project_name: "kabu-autotrader"
+version: "1.0.0"
+description: "kabu-autotrader - CCAGI SDKプロジェクト"
+
+# ========================================
+# 外部依存設定
+# ========================================
+external_dependencies:
+  anthropic_api: enabled    # Claude API使用
+  github_api: enabled       # GitHub連携
+  aws_api: enabled          # AWS MCP統合
+  starbose_llm: disabled    # Starbose LLM（ローカル）※TBA: 将来実装予定
+  external_mcp: enabled     # 外部MCPサーバー
+
+# ========================================
+# GitHub設定
+# ========================================
+github:
+  repository: "kabu-autotrader"
+  owner: "g4pjo75-gif"
+  default_branch: "main"
+  auto_label: true
+  auto_assign: true
+  draft_pr: true
+
+# ========================================
+# CCAGI Label System
+# ========================================
+labels:
+  # ラベルカテゴリ（62ラベル体系）
+  categories:
+    - STATE       # 8: pending, analyzing, implementing, reviewing, done, blocked, failed, paused
+    - AGENT       # 6: coordinator, codegen, review, issue, pr, deployment
+    - PRIORITY    # 4: P0-Critical, P1-High, P2-Medium, P3-Low
+    - TYPE        # 7: feature, bug, docs, refactor, test, architecture, deployment
+    - SEVERITY    # 4: Sev.1-Critical, Sev.2-High, Sev.3-Medium, Sev.4-Low
+    - PHASE       # 8: 1-requirements, 2-design, 3-planning, 4-implementation, 5-testing, 5.5-quality-gate, 6-documentation, 7-deployment
+    - SPECIAL     # 7: security, cost-watch, dependencies, learning, experiment, wontfix, duplicate
+    - TRIGGER     # 4: agent-execute, generate-report, deploy-staging, deploy-production
+    - QUALITY     # 4: excellent, good, needs-improvement, poor
+    - COMMUNITY   # 4: good-first-issue, help-wanted, question, discussion
+    - HIERARCHY   # 5: initiative, root, parent, child, leaf
+
+  # 自動ラベル推論
+  auto_inference:
+    enabled: true
+    infer_type: true      # Issue内容からtypeを推論
+    infer_phase: true     # コマンド・キーワードからphaseを推論
+    infer_priority: true  # 緊急度キーワードからpriorityを推論
+
+  # タスク分解フレームワーク
+  task_decomposition:
+    enabled: true
+    levels:
+      - epic     # hierarchy:root
+      - phase    # hierarchy:parent
+      - wave     # hierarchy:child
+      - cycle    # hierarchy:leaf
+    complexity:
+      S: "1-2時間、単一ファイル"
+      M: "半日〜1日、複数ファイル"
+      L: "2-3日、アーキテクチャ変更"
+      XL: "1週間以上、複数コンポーネント"
+
+  # Epic Issue必須プロセス
+  epic_requirements:
+    as_is_to_be: true     # AS-IS/TO-BE分析必須
+    gap_analysis: true    # ギャップ分析必須
+    milestone: true       # マイルストーン設定必須
+    due_date: true        # 期限設定必須
+
+# ========================================
+# プロジェクト構造
+# ========================================
+project:
+  language: "TypeScript"
+  framework: "Node.js"
+  testing: "Vitest"
+  package_manager: "npm"
+
+  directories:
+    src: "./src"
+    agents: "./.claude/agents"
+    commands: "./.claude/commands"
+    docs: "./docs"
+
+# ========================================
+# エージェント設定
+# ========================================
+agents:
+  enabled: true
+  use_worktree: true
+  worktree_base_path: ".worktrees"
+
+  # CoordinatorAgent - タスク統括
+  coordinator_agent:
+    enabled: true
+    dag_based: true
+    parallel_execution: true
+    max_parallel_tasks: 6
+    uses_anthropic: true
+    uses_github: true
+
+  # CodeGenAgent - AI駆動コード生成
+  codegen_agent:
+    enabled: true
+    model: "claude-opus-4-6"
+    strict_mode: true
+    auto_format: true
+    auto_lint: true
+    uses_anthropic: true
+
+  # ReviewAgent - 品質評価
+  review_agent:
+    enabled: true
+    min_score: 80
+    static_analysis: true
+    code_review: true
+    uses_anthropic: true
+
+  # PRAgent - PR自動作成
+  pr_agent:
+    enabled: true
+    draft_mode: true
+    auto_metrics: true
+    conventional_commits: true
+    uses_github: true
+
+# ========================================
+# 作業フロー
+# ========================================
+workflow:
+  steps:
+    - name: "タスク分解"
+      agent: "CoordinatorAgent"
+      required: true
+
+    - name: "実装"
+      agent: "CodeGenAgent"
+      required: true
+
+    - name: "品質チェック"
+      agent: "ReviewAgent"
+      required: true
+      min_score: 80
+
+    - name: "PR作成"
+      agent: "PRAgent"
+      required: true
+      draft: true
+
+# ========================================
+# ログ・レポート
+# ========================================
+logging:
+  level: "info"
+  directory: "./logs"
+  format: "json"
+
+# ========================================
+# 高度な設定
+# ========================================
+advanced:
+  parallel_processing:
+    enabled: true
+    max_workers: 3
+
+  cache:
+    enabled: true
+    directory: "./.ccagi-cache"
+    ttl: "24h"
+
+  retry:
+    max_attempts: 3
+    backoff: "exponential"
+    initial_delay: "5s"
+
+  timeout:
+    code_generation: "30m"
+    testing: "20m"
+    security_scan: "15m"
+    review: "10m"
+
+# ========================================
+# AI Runtime Layer Configuration
+# ========================================
+# Configures which AI engine and model to use for each component, skill, and agent.
+# Overrides the legacy `runtime:` section when both are present.
+#
+# ai_runtime:
+#   defaults:
+#     executor: { engine: claude-cli }                              # Skills/Agents execution engine
+#     llm: { engine: claude-api, model: claude-sonnet-4-20250514 } # LLM inference calls (llm_chat etc.)
+#     # NOTE: Sentinel Shield は設定対象外（透過的に動作、ハードコード維持）
+#   overrides:
+#     skills:
+#       tdd-workflow: { engine: claude-cli, model: "ollama:deepseek-r1" }
+#       security-audit: { engine: claude-api, model: claude-opus-4-20250514 }
+#     agents:
+#       codegen: { engine: codex-cli, model: gpt-4o }
+#     phases:
+#       4-implementation: { engine: codex-cli }
+#
+# Available engines: claude-cli, claude-api, ollama-api, codex-cli, gemini-cli, qwen-cli
+# Model format:
+#   Anthropic: claude-sonnet-4-20250514, claude-haiku-4-20250414, claude-opus-4-20250514
+#   OpenAI:    gpt-4o, gpt-4-turbo
+#   Google:    gemini-2.0-flash, gemini-1.5-pro
+#   Ollama:    ollama:llama3.3:70b, ollama:deepseek-r1, ollama:codestral
+#
+# Engine/model compatibility:
+#   claude-cli  → Anthropic models + Ollama models
+#   claude-api  → Anthropic models only
+#   codex-cli   → OpenAI models only
+#   gemini-cli  → Google models only
+#   qwen-cli    → Alibaba models only
+#   ollama-api  → Ollama and custom local models
+
+# ========================================
+# フィードバック管理設定
+# ========================================
+feedback:
+  status_values:
+    - pending
+    - in_progress
+    - applied
+    - closed
+
+  source_of_truth: "ssot_issue"
+
+  sync:
+    enabled: true
+    direction: "bidirectional"
+    auto_normalize: true
+
+  local:
+    directory: ".ai/feedback"
+    file_pattern: "*.md"
+
+# ========================================
+# テスト管理設定 (Enterprise)
+# ========================================
+# test_management:
+#   # Default execution strategy: auto | sequential | parallel | sharded
+#   default_strategy: auto
+#
+#   # Global maximum parallel workers
+#   parallel_limit: 4
+#
+#   # auto_triage: failed tests are automatically filed as GitHub Issues
+#   auto_triage: true
+#
+#   # auto_fix: CodeGenAgent attempts to fix simple failures automatically
+#   auto_fix: false
+#
+#   # report_format: markdown | json | html
+#   report_format: markdown
+#
+#   # Pipeline phases (ordered list)
+#   phases: [generate, review, execute, triage, fix, retest, report]
+#
+#   # Phase → Agent overrides (optional)
+#   # agent_mapping:
+#   #   execute: "custom-test-agent"
+#
+#   # Per-category configuration overrides
+#   # categories:
+#   #   e2e:
+#   #     strategy:
+#   #       parallel:
+#   #         workers: 8
+#   #     timeout_seconds: 300
+#   #   unit:
+#   #     strategy: parallel
+#   #     parallel_limit: 16
+#   #   security:
+#   #     strategy: sequential
+#   #     timeout_seconds: 600
+
+# ========================================
+# MCP Bundle設定
+# ========================================
+mcp_bundles:
+  # チャンネル: stable | preview | beta | nightly
+  channel: stable
+  # 自動更新（upgrade時にバンドルも自動フェッチ）
+  auto_update: true
+
+# ========================================
+# CCAGI SDK 仕様
+# ========================================
+sdk:
+  version: "4.22.13"
+
+  # コマンドシステム
+  commands:
+    source: "embedded"      # バイナリ埋め込み
+    count: 97
+    alias_dir: ".claude/commands"
+    execution: "mcp"        # MCP経由実行
+
+  # スキルシステム
+  skills:
+    source: "embedded"
+    count: 47
+    execution: "mcp"
+
+  # MCPサーバー
+  mcp:
+    server: "ccagi-tools-server"
+    tools:
+      - skill_execute       # スキル/コマンド実行
+      - skill_list          # 一覧取得
+      - skill_info          # 詳細取得
+      - agent_run           # エージェント実行
+      - command_execute     # コマンド実行
+      - command_list        # コマンド一覧
+      - agent_list          # エージェント一覧
+      - agents_summary      # サマリー取得
+      - orchestrate_workflow # ワークフロー実行
+
+  # エイリアスシステム
+  alias:
+    enabled: true
+    directory: ".claude/commands"
+    format: "markdown"      # エイリアスファイル形式
+    size_per_file: "~400 bytes"
+    total_size: "~40KB"     # 97コマンド合計
+
+# ========================================
+# Harness Configuration (Runtime Control)
+# ========================================
+# harness:
+#   session:
+#     max_turns: 50
+#     budget_tokens: 500000
+#     autocompact_pct: 70
+#     compact_after_turns: 20
+#   permissions:
+#     mode: workspace-write  # read-only | workspace-write | full-access
+#     dangerous_tools: [Bash, Write]
+#     require_confirmation: ["git push", "rm -rf"]
+#   routing:
+#     strategy: llm     # score | llm | hybrid
+#     fallback: llm
+#     min_score: 60
+#   lifecycle:
+#     on_start: [detect-packages, load-rag]
+#     on_end: [save-rag, session-summary]
+#     on_error: [create-incident-issue]

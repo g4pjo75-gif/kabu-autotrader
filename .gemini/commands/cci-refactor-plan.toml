@@ -1,0 +1,5 @@
+description = "CCIブラストレイダス分析 → q-mcp SA solver → 安全なリファク…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

@@ -1,0 +1,5 @@
+description = "ローカル環境とAWS環境（dev/prod）の設定差分を検出・レポー…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

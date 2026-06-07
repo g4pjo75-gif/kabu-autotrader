@@ -1,0 +1,5 @@
+description = "GitHub Pull Requestを作成します。Agent実行後のDraft PR作成に最適…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

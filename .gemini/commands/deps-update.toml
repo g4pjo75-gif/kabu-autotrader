@@ -1,0 +1,5 @@
+description = "パッケージの依存関係を更新します。"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。
