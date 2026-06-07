@@ -1,0 +1,35 @@
+# Antigravity - Japanese Stock Auto-Trading System
+# Requirements
+
+# Web Framework & UI
+nicegui>=1.4.0
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# HTTP Client
+httpx>=0.26.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# System Management
+psutil>=5.9.0
+
+# External Data Source
+yfinance>=0.2.36
+
+# Technical Analysis (optional, for advanced indicators)
+# ta-lib  # Requires separate binary installation
+
+# Scheduler
+apscheduler>=3.10.0
+
+# Database
+# sqlite3 is built-in to Python
+
+# WebSocket (PUSH API)
+websocket-client>=1.6.0
+
+# Utilities
+python-dotenv>=1.0.0

@@ -1,0 +1,45 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# === Database (API 비밀번호 포함!) ===
+*.db
+data/
+
+# === Logs ===
+logs/
+*.log
+
+# === Temporary / Debug files ===
+tmp_*.py
+tmp_*.json
+debug_*.py
+debug_*.log
+debug_*.txt
+scratch/
+
+# === Reports (재생성 가능) ===
+reports/
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# === Virtual Environment ===
+venv/
+.venv/
+env/
