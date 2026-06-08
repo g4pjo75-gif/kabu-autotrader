@@ -446,8 +446,8 @@ class AutomationService:
             try:
                 from nicegui import ui
                 ui.notify(f"자동매매 중지 ({strategy_name}): 안전 장치 작동", type="negative", close_button=True)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[Automation] UI notify (safety halt) failed (non-fatal): {e}")
             
             # --- Save dummy candidate for market safety halt ---
             universe_code = config.get("target_universe", "nikkei225")
@@ -845,8 +845,8 @@ class AutomationService:
         try:
             from nicegui import ui
             ui.notify(f"자동매매 시작 ({strategy_name}): {len(targets)}개 종목", type="positive")
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"[Automation] UI notify (routine start) failed (non-fatal): {e}")
             
         logger.info(f"========== [Automation] END ROUTINE: {strategy_name} (TRADING STARTED) ==========")
 
@@ -1000,16 +1000,16 @@ class AutomationService:
                     if scheduler:
                         try:
                             scheduler.remove_job("trading_loop")
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.error(f"[Automation] Failed to remove trading_loop job on stop routine: {e}")
                     self.app_state["trading_active"] = False
                     logger.info(f"[Automation] Trading stopped (no more targets)")
-                
+
                 try:
                     from nicegui import ui
                     ui.notify(f"자동매매 종료 ({config_obj.name})", type="info")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Automation] UI notify (stop routine) failed (non-fatal): {e}")
                 logger.info(f"[Automation] STOP ROUTINE executed for config {config_id}")
             
             scheduler.add_cron_job(
@@ -1104,8 +1104,8 @@ class AutomationService:
                 try:
                     from nicegui import ui
                     ui.notify("장마감 10분전 전량 청산 완료", type="warning")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Automation] UI notify (EOD liquidation) failed (non-fatal): {e}")
             
             scheduler.add_cron_job(
                 job_id="automation_eod_close",
@@ -1227,12 +1227,12 @@ class AutomationService:
         
         try:
             scheduler.remove_job(f"automation_start_{config_id}")
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"[Automation] Failed to remove automation_start_{config_id} job: {e}")
         try:
             scheduler.remove_job(f"automation_stop_{config_id}")
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"[Automation] Failed to remove automation_stop_{config_id} job: {e}")
         logger.info(f"[Automation] Unscheduled jobs for config {config_id}")
 
     def schedule_jobs(self):
