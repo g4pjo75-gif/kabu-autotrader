@@ -35,61 +35,195 @@ def create_layout(app_state: Dict[str, Any] = None) -> None:
     # Apply dark theme
     ui.dark_mode().enable()
     
-    # Custom CSS for styling
+    # Custom CSS for styling — Apple-grade refinement (design refresh)
     ui.add_head_html("""
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
+            /* Brand palette (theme_config — unchanged) */
             --primary: #6366f1;
             --secondary: #8b5cf6;
             --accent: #06b6d4;
             --dark: #1e1b4b;
             --background: #0f0e17;
             --surface: #1a1a2e;
+
+            /* Design tokens — spacing */
+            --sp-1: 4px;
+            --sp-2: 8px;
+            --sp-3: 12px;
+            --sp-4: 16px;
+            --sp-6: 24px;
+            --sp-8: 32px;
+
+            /* Design tokens — radius */
+            --radius-sm: 10px;
+            --radius-md: 14px;
+            --radius-lg: 20px;
+
+            /* Design tokens — elevation */
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.16);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32), 0 1px 4px rgba(0, 0, 0, 0.20);
+            --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.44), 0 4px 12px rgba(0, 0, 0, 0.28);
+
+            /* Design tokens — motion */
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --dur: 0.28s;
+
+            /* Design tokens — glass */
+            --glass-bg: rgba(26, 26, 46, 0.55);
+            --glass-border: rgba(255, 255, 255, 0.08);
         }
-        
+
         body {
             background-color: var(--background) !important;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, sans-serif;
+            font-weight: 300;
+            letter-spacing: -0.011em;
+            line-height: 1.47;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
-        
+
+        /* Tabular numerals for monetary / numeric values */
+        .tnum {
+            font-feature-settings: "tnum";
+            font-variant-numeric: tabular-nums;
+        }
+
         .q-drawer {
             background-color: var(--surface) !important;
         }
-        
+
         .nav-item {
-            border-radius: 8px;
-            margin: 4px 8px;
-            transition: all 0.2s;
+            border-radius: var(--radius-sm);
+            margin: var(--sp-1) var(--sp-2);
+            transition: background-color var(--dur) var(--ease-out),
+                        transform var(--dur) var(--ease-out);
         }
-        
+
         .nav-item:hover {
             background-color: rgba(99, 102, 241, 0.2);
         }
-        
+
         .nav-item.active {
             background-color: rgba(99, 102, 241, 0.3);
             border-left: 3px solid var(--primary);
         }
-        
+
+        /* Gradient card colorway preserved; only depth/shape refined */
         .card-gradient {
             background: linear-gradient(135deg, var(--surface) 0%, var(--dark) 100%);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
+
+        /* Glassmorphism for cards — no background override to preserve gradient cards */
+        .q-card {
+            backdrop-filter: blur(20px) saturate(140%);
+            -webkit-backdrop-filter: blur(20px) saturate(140%);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            transition: transform var(--dur) var(--ease-out),
+                        box-shadow var(--dur) var(--ease-out);
+        }
+
+        .q-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        /* Buttons — tactile press feedback */
+        .q-btn {
+            border-radius: var(--radius-sm);
+            transition: transform 0.18s var(--ease-out),
+                        box-shadow 0.18s var(--ease-out);
+        }
+
+        .q-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .q-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Inputs — subtle focus glow */
+        .q-field--focused .q-field__control {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+        }
+
+        /* Tables — refined header weight + row hover */
+        .q-table thead th {
+            font-weight: 500;
+            letter-spacing: -0.01em;
+        }
+
+        .q-table tbody tr {
+            transition: background-color 0.18s var(--ease-out);
+        }
+
+        .q-table tbody tr:hover {
+            background: rgba(99, 102, 241, 0.08);
+        }
+
         .status-badge {
-            padding: 4px 12px;
+            padding: var(--sp-1) var(--sp-3);
             border-radius: 20px;
             font-size: 12px;
             font-weight: 500;
         }
-        
+
         .status-running {
             background-color: rgba(34, 197, 94, 0.2);
             color: #22c55e;
         }
-        
+
         .status-stopped {
             background-color: rgba(239, 68, 68, 0.2);
             color: #ef4444;
+        }
+
+        /* Entrance motion */
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+
+        .page-content {
+            animation: slideUp 0.45s var(--ease-out) both;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .page-content {
+                animation: none;
+            }
+        }
+
+        /* Thin translucent scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
         }
     </style>
     """)

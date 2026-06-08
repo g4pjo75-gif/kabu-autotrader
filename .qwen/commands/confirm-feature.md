@@ -1,0 +1,12 @@
+---
+description: CCAGI - **Phase**: Phase 5.5（/mock-detector実行後に自動実行） command
+---
+このコマンドはCCAGI MCPサーバーを通じて実行されます。
+
+**実行方法**: MCPツール `skill_execute` を使用
+
+```
+skill_execute(name: "- **Phase**: Phase 5.5（/mock-detector実行後に自動実…")
+```
+
+**重要**: このコマンドを独自に代替実装してはいけません。必ず上記MCPツールを呼び出してください。

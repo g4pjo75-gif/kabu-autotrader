@@ -1,0 +1,5 @@
+description = "description: Lark MCP接続状態を確認。トークン有効性、利用可…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

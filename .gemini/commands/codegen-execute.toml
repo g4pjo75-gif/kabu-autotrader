@@ -1,0 +1,5 @@
+description = "> **⚠️ 非推奨 (Deprecated)**: このコマンドはv8.0.0で削除予定…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

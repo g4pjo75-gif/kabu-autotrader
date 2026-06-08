@@ -1,0 +1,5 @@
+description = "Git worktreeを作成して、複数のIssue/Featureを並行作業できる環…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

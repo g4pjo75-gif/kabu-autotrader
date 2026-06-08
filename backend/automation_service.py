@@ -35,6 +35,10 @@ DEFAULT_CONFIG = {
     "end_time": "15:00",
 }
 
+# Circuit breaker: stop the trading loop after this many consecutive failed
+# cycles to prevent runaway execution when the API is unhealthy.
+MAX_CONSECUTIVE_ERRORS = 5
+
 
 class AutomationService:
     """
@@ -48,9 +52,12 @@ class AutomationService:
         # In-memory cache of configs: Dict[config_id, AutomationConfig]
         self.configs: Dict[int, AutomationConfig] = {}
         
+        # Circuit breaker state: consecutive failed trading cycles.
+        self._consecutive_errors = 0
+
         # Load configs from DB
         self._load_configs()
-        
+
     def _log_to_dashboard(self, message: str, level: str = "INFO"):
         """Log to console and app_state for UI"""
         from datetime import datetime
@@ -439,8 +446,8 @@ class AutomationService:
             try:
                 from nicegui import ui
                 ui.notify(f"자동매매 중지 ({strategy_name}): 안전 장치 작동", type="negative", close_button=True)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"[Automation] UI notify (safety halt) failed (non-fatal): {e}")
             
             # --- Save dummy candidate for market safety halt ---
             universe_code = config.get("target_universe", "nikkei225")
@@ -838,10 +845,84 @@ class AutomationService:
         try:
             from nicegui import ui
             ui.notify(f"자동매매 시작 ({strategy_name}): {len(targets)}개 종목", type="positive")
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"[Automation] UI notify (routine start) failed (non-fatal): {e}")
             
         logger.info(f"========== [Automation] END ROUTINE: {strategy_name} (TRADING STARTED) ==========")
+
+    async def run_trading_cycle(self):
+        """
+        Circuit-breaker wrapper around TradingService.run_trading_cycle.
+
+        Runs one trading cycle and tracks consecutive failures. If the
+        underlying cycle raises an exception MAX_CONSECUTIVE_ERRORS times in a
+        row, trading is force-disabled (trading_active=False), the trading_loop
+        job is removed, an alert is sent (if a notifier is configured) and a
+        CRITICAL log is emitted — preventing runaway execution against an
+        unhealthy API. A successful cycle resets the counter.
+
+        The actual trading/order logic is untouched; this only adds a guard.
+        """
+        trading_service = self.app_state.get("trading_service")
+        if not trading_service:
+            logger.error("[Automation] run_trading_cycle: trading_service missing")
+            return
+
+        try:
+            await trading_service.run_trading_cycle()
+            # Success: reset the consecutive-error counter.
+            if self._consecutive_errors:
+                logger.info(
+                    f"[Automation] Trading cycle recovered after "
+                    f"{self._consecutive_errors} consecutive error(s)."
+                )
+            self._consecutive_errors = 0
+        except Exception as e:
+            self._consecutive_errors += 1
+            logger.error(
+                f"[Automation] Trading cycle failed "
+                f"({self._consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}"
+            )
+            self._log_to_dashboard(
+                f"매매 사이클 오류 ({self._consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}",
+                "WARNING",
+            )
+
+            if self._consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                # Trip the circuit breaker: stop the loop.
+                self.app_state["trading_active"] = False
+                scheduler = self.app_state.get("scheduler")
+                if scheduler:
+                    try:
+                        scheduler.remove_job("trading_loop")
+                    except Exception:
+                        pass
+
+                logger.critical(
+                    f"[Automation] CIRCUIT BREAKER TRIPPED: "
+                    f"{self._consecutive_errors} consecutive trading-cycle "
+                    f"failures. Trading loop STOPPED to prevent runaway "
+                    f"execution. Last error: {e}"
+                )
+                self._log_to_dashboard(
+                    f"🚨 서킷 브레이커 작동: 연속 {self._consecutive_errors}회 오류로 "
+                    f"자동매매 루프를 중단했습니다.",
+                    "ERROR",
+                )
+
+                notifier = self.app_state.get("notifier")
+                if notifier and getattr(notifier, "is_configured", False):
+                    try:
+                        await notifier.send_system_alert(
+                            f"서킷 브레이커 작동: 연속 {self._consecutive_errors}회 "
+                            f"매매 사이클 실패로 자동매매를 중단했습니다. "
+                            f"마지막 오류: {e}",
+                            level="ERROR",
+                        )
+                    except Exception as alert_err:
+                        logger.error(
+                            f"[Automation] Failed to send circuit-breaker alert: {alert_err}"
+                        )
 
     def _ensure_trading_loop_running(self):
         """Ensure the trading loop is running"""
@@ -855,10 +936,17 @@ class AutomationService:
             if not scheduler.get_job("trading_loop"):
                  logger.info("[Automation] Starting Trading Loop Job...")
                  scheduler.start()
+                 # Reset circuit breaker on fresh loop start.
+                 self._consecutive_errors = 0
+                 # Use the circuit-breaker wrapper (self.run_trading_cycle) so
+                 # consecutive API failures auto-stop the loop. max_instances/
+                 # coalesce prevent duplicate concurrent cycles (double orders).
                  scheduler.add_interval_job(
-                     trading_service.run_trading_cycle,
+                     self.run_trading_cycle,
                      job_id="trading_loop",
                      seconds=5,
+                     max_instances=1,
+                     coalesce=True,
                  )
             self.app_state["trading_active"] = True
             logger.info("[Automation] Trading loop ACTIVATED.")
@@ -912,16 +1000,16 @@ class AutomationService:
                     if scheduler:
                         try:
                             scheduler.remove_job("trading_loop")
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.error(f"[Automation] Failed to remove trading_loop job on stop routine: {e}")
                     self.app_state["trading_active"] = False
                     logger.info(f"[Automation] Trading stopped (no more targets)")
-                
+
                 try:
                     from nicegui import ui
                     ui.notify(f"자동매매 종료 ({config_obj.name})", type="info")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Automation] UI notify (stop routine) failed (non-fatal): {e}")
                 logger.info(f"[Automation] STOP ROUTINE executed for config {config_id}")
             
             scheduler.add_cron_job(
@@ -1016,8 +1104,8 @@ class AutomationService:
                 try:
                     from nicegui import ui
                     ui.notify("장마감 10분전 전량 청산 완료", type="warning")
-                except:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Automation] UI notify (EOD liquidation) failed (non-fatal): {e}")
             
             scheduler.add_cron_job(
                 job_id="automation_eod_close",
@@ -1139,12 +1227,12 @@ class AutomationService:
         
         try:
             scheduler.remove_job(f"automation_start_{config_id}")
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"[Automation] Failed to remove automation_start_{config_id} job: {e}")
         try:
             scheduler.remove_job(f"automation_stop_{config_id}")
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"[Automation] Failed to remove automation_stop_{config_id} job: {e}")
         logger.info(f"[Automation] Unscheduled jobs for config {config_id}")
 
     def schedule_jobs(self):

@@ -1,0 +1,5 @@
+description = "xkoma-mcp memory-search コマンド"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

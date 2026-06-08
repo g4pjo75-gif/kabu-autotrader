@@ -1,0 +1,5 @@
+description = "CCI全機能スモークテスト — query/context/impact/detect_changes動作…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

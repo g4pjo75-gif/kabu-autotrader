@@ -63,6 +63,10 @@ class TradingService:
         self._breakout_strategy = HighBreakoutStrategy()
         # 종목별 이전 당일 고가 기록
         self._prev_day_highs = {}
+        # 口座レベル発注ハードキャップ用 日次カウンタ (買いのみ適用)
+        self._daily_order_count = 0
+        self._daily_turnover = 0.0
+        self._caps_date = None   # 日付が変わったらリセット
 
     def _log(self, message: str, level: str = "INFO"):
         """Log to console, app_state for UI, and file logger"""
@@ -271,7 +275,11 @@ class TradingService:
                 self._log(f"Failed to get price for {symbol}: {e}", "ERROR")
             
             if current_price <= 0:
-                logger.warning(f"[Trading] Skip sell check for {symbol}: price={current_price}")
+                # SAFETY (Critical#2): price fetch failed -> loss-cut CANNOT be evaluated here.
+                # We still skip (avoid mis-ordering on an unknown price), but this position is
+                # left unprotected this cycle and REQUIRES MONITORING until a valid price returns.
+                logger.warning(f"[Trading] Skip sell check for {symbol}: price={current_price} "
+                               f"(loss-cut not evaluated - requires monitoring)")
                 continue
             
             entry_price = pos.get("avg_price", 0)
@@ -302,9 +310,17 @@ class TradingService:
             stepped_trailing_enabled = self.app_state.get("stepped_trailing_enabled", True)
             
             # Apply Sell Strategies
-            # Priority: SteppedTrailing (if enabled) > TakeProfit > TrailingStop > DynamicLossCut
+            # Priority: DynamicLossCut (hard stop, FIRST) > SteppedTrailing (if enabled) > TakeProfit > TrailingStop
+            # SAFETY (Critical#2): Loss-cut is evaluated FIRST so that a sudden drop triggers
+            # the stop-loss before any looser exit strategy can fill above the stop level.
+            # The loop below breaks on the first triggered strategy, so order == priority.
             sell_strategies = []
-            
+
+            # Hard stop: dynamic loss-cut must be the highest-priority sell strategy.
+            sell_strategies.append(
+                DynamicLossCutManager(loss_cut_percent=lc_pct, time_stop_minutes=time_stop_mins)
+            )
+
             if stepped_trailing_enabled:
                 # Stepped Trailing takes priority over fixed TakeProfit
                 sell_strategies.append(
@@ -315,13 +331,10 @@ class TradingService:
                         trailing_step2_trail_pct=st_step2_trail,
                     )
                 )
-            
+
             # Fallback: fixed take-profit (acts as safety net / ceiling)
             sell_strategies.append(TakeProfitManager(take_profit_percent=tp_pct))
             sell_strategies.append(TrailingStopManager(trailing_stop_percent=ts_pct))
-            sell_strategies.append(
-                DynamicLossCutManager(loss_cut_percent=lc_pct, time_stop_minutes=time_stop_mins)
-            )
             
             order_params = None
             triggered_strategy = None
@@ -855,7 +868,80 @@ class TradingService:
                         "ERROR"
                     )
                 return False
-        
+
+        # ─────────────────────────────────────────────────────────────
+        # 口座レベル発注ハードキャップ (買い注文のみ適用)
+        # 売り(SELL=決済/損切り)は資金保全のため一切ブロックしない
+        # ─────────────────────────────────────────────────────────────
+        if side == "BUY":
+            # 日跨ぎリセット
+            caps_today = datetime.now().strftime("%Y-%m-%d")
+            if self._caps_date != caps_today:
+                self._daily_order_count = 0
+                self._daily_turnover = 0.0
+                self._caps_date = caps_today
+
+            # キャップ設定 (main.py 未load環境でも壊れないよう default fallback)
+            cap_order_notional = float(self.app_state.get("max_order_notional", 500000))
+            cap_order_count = int(self.app_state.get("daily_max_order_count", 20))
+            cap_turnover = float(self.app_state.get("daily_max_turnover", 2000000))
+            cap_total_position = float(self.app_state.get("max_total_position_value", 1000000))
+
+            # notional 算出 (price 取得不可/0以下なら notional 系チェックはスキップ)
+            try:
+                notional = float(qty) * float(price)
+            except (TypeError, ValueError):
+                notional = 0.0
+            notional_valid = notional > 0
+
+            cap_blocked_reason = None
+
+            # 1) 1注文あたり金額上限
+            if notional_valid and notional > cap_order_notional:
+                cap_blocked_reason = (
+                    f"1注文金額上限超過 (注文額: ¥{notional:,.0f} > 上限: ¥{cap_order_notional:,.0f})"
+                )
+            # 2) 1日の総発注回数上限
+            elif self._daily_order_count >= cap_order_count:
+                cap_blocked_reason = (
+                    f"1日発注回数上限到達 (本日: {self._daily_order_count}回 >= 上限: {cap_order_count}回)"
+                )
+            # 3) 1日の総約定代金上限
+            elif notional_valid and (self._daily_turnover + notional) > cap_turnover:
+                cap_blocked_reason = (
+                    f"1日約定代金上限超過 (累計: ¥{self._daily_turnover:,.0f} + 注文: ¥{notional:,.0f} "
+                    f"> 上限: ¥{cap_turnover:,.0f})"
+                )
+            # 4) 同時建玉総額上限 (建玉総額が算出できなければスキップ)
+            elif notional_valid:
+                current_position_value = 0.0
+                position_value_computed = False
+                try:
+                    for pos in self.app_state.get("positions", []) or []:
+                        pos_price = pos.get("avg_price", pos.get("entry", 0)) or 0
+                        pos_qty = pos.get("qty", 0) or 0
+                        current_position_value += float(pos_price) * float(pos_qty)
+                    position_value_computed = True
+                except (TypeError, ValueError):
+                    position_value_computed = False
+                if position_value_computed and (current_position_value + notional) > cap_total_position:
+                    cap_blocked_reason = (
+                        f"同時建玉総額上限超過 (現建玉: ¥{current_position_value:,.0f} + 注文: ¥{notional:,.0f} "
+                        f"> 上限: ¥{cap_total_position:,.0f})"
+                    )
+
+            if cap_blocked_reason:
+                msg = f"🛑 発注ハードキャップ: {symbol} 買い注文をブロック — {cap_blocked_reason}"
+                self._log(msg, "WARNING")
+                logger.warning(f"[Trading] {msg}")
+                notifier = self.app_state.get("notifier")
+                if notifier and getattr(notifier, "is_configured", False):
+                    try:
+                        await notifier.send_system_alert(msg, "WARNING")
+                    except Exception as e:
+                        logger.error(f"[Trading] Cap-block alert failed: {e}")
+                return False
+
         try:
             # 1. Send Order to API
             # 실매매: 성행(Market) 주문, 시뮬레이션: 지정가(Limit)
@@ -944,6 +1030,16 @@ class TradingService:
                     self._log(
                         f"[{mode_tag}] 일일 누적 손익: ¥{self._daily_realized_pnl:+,.0f}"
                     )
+
+                # 口座レベル発注ハードキャップ: 発注成功時のみ買いカウンタ加算
+                if side == "BUY":
+                    try:
+                        cap_notional = float(qty) * float(price)
+                    except (TypeError, ValueError):
+                        cap_notional = 0.0
+                    self._daily_order_count += 1
+                    if cap_notional > 0:
+                        self._daily_turnover += cap_notional
                 return True
             else:
                 error_msg = result.get("Message", "Unknown error")

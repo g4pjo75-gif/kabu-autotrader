@@ -1,0 +1,5 @@
+description = "CCIインデックス健全性チェック — stale検出、グラフ整合性…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

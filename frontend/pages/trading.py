@@ -5,8 +5,11 @@ Auto-Trading Page
 Trading controls and execution strategy configuration.
 Supports multiple strategy configurations with persistence.
 """
+import logging
 from nicegui import ui
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # Strategy Guide Content
@@ -372,8 +375,8 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                     if scheduler:
                         try:
                             scheduler.remove_job("trading_loop")
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"[Trading] Failed to remove trading_loop job on stop: {e}")
                         
                     ui.notify("자동 매매를 중지했습니다", type="info")
                 

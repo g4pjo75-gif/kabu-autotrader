@@ -1,0 +1,5 @@
+description = "SSOT (Single Source of Truth) Issue を作成し、`.ccagi.yml` に記録しま…"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

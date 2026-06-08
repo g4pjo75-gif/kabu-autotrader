@@ -1,0 +1,52 @@
+name: Project Sync
+
+# PROJECT_TOKEN Setup:
+#   1. Create a GitHub Fine-grained Personal Access Token (PAT) with:
+#      - Repository access: This repository
+#      - Permissions: Issues (Read & Write), Projects (Read & Write)
+#   2. Go to Settings > Secrets and variables > Actions
+#   3. Create a new repository secret named PROJECT_TOKEN with the PAT value
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+  repository-projects: write
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add Issue to Project
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: ${PROJECT_URL}
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+
+  set-initiative-label:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.action == 'opened' &&
+      contains(github.event.issue.body, 'Initiative ID')
+    steps:
+      - name: Extract Initiative ID and add label
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = context.payload.issue.body || '';
+            const match = body.match(/INI-[A-Z]+-[A-Z]+/);
+            if (match) {
+              const initiativeId = match[0];
+              const labels = context.payload.issue.labels.map(l => l.name);
+              if (!labels.includes('initiative')) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: ['initiative']
+                });
+              }
+            }

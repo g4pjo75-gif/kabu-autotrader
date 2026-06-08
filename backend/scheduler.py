@@ -80,6 +80,12 @@ class Scheduler:
             seconds: Interval in seconds
             **kwargs: Additional arguments for add_job
         """
+        # Defensive defaults: prevent duplicate concurrent execution of the
+        # same job (two orders fired in one tick) when a cycle outruns its
+        # interval. coalesce collapses missed runs into a single run.
+        # Caller-supplied values take precedence (setdefault keeps overrides).
+        kwargs.setdefault("max_instances", 1)
+        kwargs.setdefault("coalesce", True)
         self._scheduler.add_job(
             func,
             IntervalTrigger(seconds=seconds),

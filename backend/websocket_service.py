@@ -11,6 +11,7 @@ Flow:
 3. 등록된 종목의 시세 업데이트가 실시간 Push
 4. 수신 데이터를 IntradayBarAccumulator에 전달하여 5분봉 생성
 """
+import copy
 import json
 import logging
 import threading
@@ -168,9 +169,18 @@ class IntradayBarAccumulator:
             return self._current_bar.get(symbol)
     
     def get_vwap_state(self, symbol: str) -> VWAPState:
-        """종목의 당일 VWAP 상태"""
+        """종목의 당일 VWAP 상태 (일관된 스냅샷)
+
+        WS 수신 스레드가 lock 하에서 VWAPState를 파괴적으로 갱신하는 동안,
+        호출 측이 lock 밖에서 여러 필드를 반복 조회하면 tick_count와 실제
+        값(vwap/recent_prices/vwap_history 등)이 불일치할 수 있다.
+        이를 막기 위해 lock 하에서 깊은 복사본(불변 스냅샷)을 반환한다.
+        VWAPState는 float/int/list[float]만 보유하고 순환 참조가 없으므로
+        deepcopy 비용이 작고 안전하다. 반환 타입은 동일하므로 호출 측
+        필드 접근은 변경 불필요하다.
+        """
         with self._lock:
-            return self._vwap_states[symbol]
+            return copy.deepcopy(self._vwap_states[symbol])
     
     def get_vwap(self, symbol: str) -> float:
         """종목의 현재 VWAP 값"""

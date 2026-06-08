@@ -1,0 +1,5 @@
+description = "description: Lark MCP のクレデンシャル（APP_ID、APP_SECRET）を設定"
+
+[prompt]
+このコマンドはCCAGI MCPサーバー経由で実行されます。
+MCPツール skill_execute で "Prompt" を実行してください。

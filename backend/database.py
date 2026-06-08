@@ -203,6 +203,15 @@ class Database:
             except sqlite3.OperationalError:
                 pass
 
+            # App settings table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                )
+            """)
+
     # --- Trade History Methods ---
 
     def add_trade(self, trade: TradeRecord) -> int:

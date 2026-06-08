@@ -435,7 +435,12 @@ class ReportService:
                     import pandas as pd
                     import yfinance as yf
                     # Fetch recent day data to get final closing price
-                    data = yf.download(fetch_symbols, period="1d", progress=False)
+                    # multi_level_index=False: yfinance 1.x returns MultiIndex columns
+                    # even for a single ticker, which makes closes.iloc[-1] a Series
+                    # (not a scalar) and breaks float(). Flattening keeps the single
+                    # ticker as a plain Series while preserving per-ticker columns for
+                    # the multi-ticker branch below.
+                    data = yf.download(fetch_symbols, period="1d", progress=False, multi_level_index=False)
                     if not data.empty:
                         if "Close" in data:
                             closes = data["Close"]

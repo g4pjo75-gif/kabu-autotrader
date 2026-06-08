@@ -43,3 +43,12 @@ Desktop.ini
 venv/
 .venv/
 env/
+
+# === CCAGI runtime state (実行時生成、コミット不要) ===
+.ai/.mcp-status-cache.json
+.ai/.statusline-state.json
+.ai/.statusline-*.json
+.ai/.checkpoints/
+.ai/logs/
+.ai/.runtime/
+.ccidb/

@@ -81,7 +81,13 @@ def init_services():
     
     # Live Trading Safety
     app_state["daily_max_loss"] = float(database.get_setting("daily_max_loss") or "30000")
-    
+
+    # Account-level Order Hard Caps (last-line safety before live funds)
+    app_state["max_order_notional"] = float(database.get_setting("max_order_notional") or "500000")        # 1注文あたり金額上限(円)
+    app_state["daily_max_order_count"] = int(database.get_setting("daily_max_order_count") or "20")          # 1日の総発注回数上限(口座全体)
+    app_state["daily_max_turnover"] = float(database.get_setting("daily_max_turnover") or "2000000")        # 1日の総約定代金上限(円)
+    app_state["max_total_position_value"] = float(database.get_setting("max_total_position_value") or "1000000")  # 同時建玉総額上限(円)
+
     # Market Index Filter Settings
     app_state["market_index_down_threshold"] = float(database.get_setting("market_index_down_threshold") or "0.1")
     app_state["market_index_up_threshold"] = float(database.get_setting("market_index_up_threshold") or "0.05")
@@ -123,7 +129,11 @@ def init_services():
         kabu_client = MockKabuClient()
     else:
         app_state["simulation_mode"] = False
-        kabu_client = KabuClient()
+        # SAFETY: never hand the raw KabuClient (no live-trading guard) to app_state.
+        # Wrap it in HybridKabuClient, which starts with live_trading=False and only
+        # sends real orders after the settings.py manual toggle calls
+        # enable_live_trading() (which itself requires production env + order password).
+        kabu_client = HybridKabuClient(KabuClient())
         
     # Register Core Services first (Dependencies for TradingService)
     app_state.update({
@@ -188,7 +198,7 @@ async def home():
     drawer = create_sidebar(app_state)
     create_header(drawer, "설정 및 연결")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await settings_page(app_state)
 
 
@@ -199,7 +209,7 @@ async def extraction():
     drawer = create_sidebar(app_state)
     create_header(drawer, "종목 발굴")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await extraction_page(app_state)
 
 
@@ -210,7 +220,7 @@ async def trading():
     drawer = create_sidebar(app_state)
     create_header(drawer, "자동 매매")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await trading_page(app_state)
 
 
@@ -221,7 +231,7 @@ async def dashboard():
     drawer = create_sidebar(app_state)
     create_header(drawer, "대시보드")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await dashboard_page(app_state)
 
 

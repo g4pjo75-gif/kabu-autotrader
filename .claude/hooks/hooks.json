@@ -1,0 +1,178 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-start.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/plugin-conflict-detector.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-pipeline-guide.sh",
+            "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-start-cci-refresh.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/user-prompt-cci-freshness.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "matcher": "*.rs",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/cci-analyze-on-change.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*.ts",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/cci-analyze-on-change.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*.tsx",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/cci-analyze-on-change.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-end.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/jj-first-enforcer.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/jj-destructive-guard.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/jj-snapshot-before-destructive.sh",
+            "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/git-ops-validator.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-worktree-pre.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-progress.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-logger.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/codegen-review-trigger.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-worktree-post.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-progress.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/feedback-ssot-sync.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/format-check.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

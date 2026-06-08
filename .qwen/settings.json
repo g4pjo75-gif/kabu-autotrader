@@ -1,0 +1,340 @@
+{
+  "hooks": [
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/admin-merge-audit.sh",
+      "timeout": 10000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/agent-parallel-intent-check.sh",
+      "timeout": 5000, "toolName": ["Agent"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/agent-pipeline-guide.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/agent-progress-tmux.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/agent-progress-tmux.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/agent-worktree-enforce.sh",
+      "timeout": 5000, "toolName": ["task"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/anti-pattern-check.sh",
+      "timeout": 3000, "toolName": ["Edit", "Write", "MultiEdit", "NotebookEdit"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/brand-compliance-gate.sh",
+      "timeout": 10000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/cargo-config-target-dir-gate.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/cci-analyze-error-surface.sh",
+      "timeout": 1999
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/cci-incremental-analyze.sh",
+      "timeout": 30000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/ccjj-jj-intercept.sh",
+      "timeout": 5000, "toolName": ["bash"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/decision-record-trigger.sh",
+      "timeout": 3000, "toolName": ["ExitPlanMode"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/docs-wiki-sync.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionStart",
+      "command": "scripts/learning/dogfood-metrics.sh",
+      "timeout": 4999
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/error-lifecycle-finalize.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/external-module-gates.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/feedback-stale-warning.sh",
+      "timeout": 8000
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/feedback-wiki-sync.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/formal-foundation-check.sh",
+      "timeout": 4999, "toolName": ["Write", "Edit", "MultiEdit"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/git-mutating-intercept.sh",
+      "timeout": 5000, "toolName": ["bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/inline-l0-query-check.sh",
+      "timeout": 3000, "toolName": ["Edit", "Write", "MultiEdit"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/intent-guard.sh",
+      "timeout": 5000, "toolName": ["edit", "write"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/issue-close-gate.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/knowledge-ingest-watch.sh",
+      "timeout": 3000
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/knowledge-weekly-lint.sh",
+      "timeout": 3000
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/l0-query-touch.sh",
+      "timeout": 2000, "toolName": ["mcp__ccagi-tools__wiki_search", "mcp__ccagi-tools__cci_query", "mcp__ccagi-tools__cci_context", "mcp__ccagi-tools__cci_impact"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/memory-action-extractor.sh",
+      "timeout": 4999
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/obstacle-three-choices.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/pending-actions-consumer.sh",
+      "timeout": 1999
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/pending-queue-drain.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pil-validate-on-commit.sh",
+      "timeout": 10000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pipeline-deploy-guard.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/pipeline-stale-detector.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/plan-capture.sh",
+      "timeout": 5000, "toolName": ["ExitPlanMode"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/plan-invariant-check.sh",
+      "timeout": 10000, "toolName": ["ExitPlanMode"]
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/plan-wave-checkpoint.sh",
+      "timeout": 10000
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/post-commit-wiki.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/post-impl-invariant-check.sh",
+      "timeout": 10000, "toolName": ["Agent"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/post-plan-issue-create.sh",
+      "timeout": 15000, "toolName": ["ExitPlanMode"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pr-base-verify.sh",
+      "timeout": 10000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pr-issue-link-check.sh",
+      "timeout": 10000
+    },
+    {
+      "type": "PreCompress",
+      "command": ".claude/hooks/pre-compact-hot-cache.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pre-jsonl-write-advisory.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pre-pipeline-run.sh",
+      "timeout": 3000, "toolName": ["mcp__pil-mcp__pipeline_run"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pre-task-learning-lookup.sh",
+      "timeout": 3000, "toolName": ["Bash", "Edit", "Write", "MultiEdit", "Task"]
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/pre-task-memory-scan.sh",
+      "timeout": 2999, "toolName": ["Bash", "Edit", "Write", "MultiEdit", "Task"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/pre-task-memory-scan.sh",
+      "timeout": 2999, "toolName": ["Bash", "Edit", "Write", "MultiEdit", "Task"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/security-incident-learn.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/security-regression-guard.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/session-end.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/session-end-knowledge-sync.sh",
+      "timeout": 8000
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/session-end-wiki.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/session-learning-detector.sh",
+      "timeout": 10000
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/session-narrative-generator.sh",
+      "timeout": 10000
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/session-start-hot-rotate.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/session-start-knowledge-prime.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/session-start-wiki.sh",
+      "timeout": 5000
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/source-change-guard.sh",
+      "timeout": 3000, "toolName": ["Edit", "Write"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/ssot-drift-precommit.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/subagent-vcs-guard.sh",
+      "timeout": 5000, "toolName": ["bash"]
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/tmp-body-file-block.sh",
+      "timeout": 3000, "toolName": ["Bash"]
+    },
+    {
+      "type": "AfterTool",
+      "command": ".claude/hooks/tobe-change-detector.sh",
+      "timeout": 5000, "toolName": ["Bash"]
+    },
+    {
+      "type": "SessionEnd",
+      "command": ".claude/hooks/wiki-index-rebuild.sh",
+      "timeout": 15000
+    },
+    {
+      "type": "SessionStart",
+      "command": ".claude/hooks/wiki-session-periodic.sh",
+      "timeout": 1999
+    },
+    {
+      "type": "BeforeTool",
+      "command": ".claude/hooks/worktree-manager.sh",
+      "timeout": 5000
+    }
+  ],
+  "mcpServers": {
+    "ccagi-tools": {
+      "command": "ccagi-tools-server",
+      "args": ["--runtime", "qwen"]
+    }
+  }
+}

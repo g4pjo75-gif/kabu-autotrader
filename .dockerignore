@@ -1,0 +1,46 @@
+# Python / venv
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# データ・ログ（揮発、実行時生成）
+data/
+logs/
+*.db
+*.log
+
+# VCS / CI
+.git/
+.github/
+.gitignore
+
+# CCAGI 開発基盤（HF Spaceには不要）
+.ai/
+.ccidb/
+.claude/
+.gemini/
+.qwen/
+.ccagi/
+.ccagi.yml
+.mcp.json
+AGENTS.md
+
+# テスト/フロントツール（アプリ実行に不要）
+node_modules/
+playwright/
+playwright.config.ts
+tests/
+*.png
+
+# 開発用使い捨てスクリプト
+test_*.py
+check_*.py
+tmp_*.py
+debug_*.py
+
+# OS
+.DS_Store
+Thumbs.db
