@@ -141,6 +141,124 @@ async def dashboard_page(app_state: Dict[str, Any]) -> None:
                 ui.separator().classes("mb-4")
                 today_details_container = ui.column().classes("w-full")
 
+    # 5. Charts (ECharts - real market data)
+    _DARK_TEXT = "#a7a9be"
+
+    with ui.row().classes("w-full mt-2 mb-6 gap-6"):
+        # Left chart column
+        with ui.column().classes("flex-1 gap-6"):
+            # ① Cumulative realized P&L (line)
+            with ui.card().classes("w-full bg-gray-800 rounded-lg p-6"):
+                with ui.row().classes("items-center mb-4"):
+                    ui.icon("show_chart").classes("text-indigo-400 mr-2")
+                    ui.label("누적 실현 손익 추이").classes("text-lg font-semibold text-white")
+                ui.separator().classes("mb-4")
+                pnl_chart = ui.echart({
+                    "backgroundColor": "transparent",
+                    "textStyle": {"color": _DARK_TEXT},
+                    "tooltip": {"trigger": "axis"},
+                    "grid": {"left": "10%", "right": "5%", "top": "8%", "bottom": "12%"},
+                    "xAxis": {
+                        "type": "category",
+                        "data": [],
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                    },
+                    "yAxis": {
+                        "type": "value",
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                        "splitLine": {"lineStyle": {"color": "rgba(167,169,190,0.15)"}},
+                    },
+                    "series": [{
+                        "type": "line",
+                        "smooth": True,
+                        "areaStyle": {},
+                        "lineStyle": {"color": "#6366f1"},
+                        "itemStyle": {"color": "#6366f1"},
+                        "data": [],
+                    }],
+                }).classes("w-full h-64")
+
+            # ③ Market indices change_pct (horizontal bar)
+            with ui.card().classes("w-full bg-gray-800 rounded-lg p-6"):
+                with ui.row().classes("items-center mb-4"):
+                    ui.icon("public").classes("text-cyan-400 mr-2")
+                    ui.label("시장 지수 (US, 등락률 %)").classes("text-lg font-semibold text-white")
+                ui.separator().classes("mb-4")
+                market_chart = ui.echart({
+                    "backgroundColor": "transparent",
+                    "textStyle": {"color": _DARK_TEXT},
+                    "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+                    "grid": {"left": "20%", "right": "8%", "top": "8%", "bottom": "12%"},
+                    "xAxis": {
+                        "type": "value",
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                        "splitLine": {"lineStyle": {"color": "rgba(167,169,190,0.15)"}},
+                    },
+                    "yAxis": {
+                        "type": "category",
+                        "data": [],
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                    },
+                    "series": [{"type": "bar", "data": []}],
+                }).classes("w-full h-64")
+
+        # Right chart column
+        with ui.column().classes("flex-1 gap-6"):
+            # ② Position evaluation P&L (horizontal bar)
+            with ui.card().classes("w-full bg-gray-800 rounded-lg p-6"):
+                with ui.row().classes("items-center mb-4"):
+                    ui.icon("bar_chart").classes("text-green-400 mr-2")
+                    ui.label("보유 포지션 평가손익").classes("text-lg font-semibold text-white")
+                ui.separator().classes("mb-4")
+                position_chart = ui.echart({
+                    "backgroundColor": "transparent",
+                    "textStyle": {"color": _DARK_TEXT},
+                    "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+                    "grid": {"left": "25%", "right": "8%", "top": "8%", "bottom": "12%"},
+                    "xAxis": {
+                        "type": "value",
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                        "splitLine": {"lineStyle": {"color": "rgba(167,169,190,0.15)"}},
+                    },
+                    "yAxis": {
+                        "type": "category",
+                        "data": [],
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                    },
+                    "series": [{"type": "bar", "data": []}],
+                }).classes("w-full h-64")
+
+            # ④ VWAP deviation (line, best-effort)
+            with ui.card().classes("w-full bg-gray-800 rounded-lg p-6"):
+                with ui.row().classes("items-center mb-4"):
+                    ui.icon("timeline").classes("text-purple-400 mr-2")
+                    ui.label("VWAP 추이 (보유 1종목)").classes("text-lg font-semibold text-white")
+                ui.separator().classes("mb-4")
+                vwap_chart = ui.echart({
+                    "backgroundColor": "transparent",
+                    "textStyle": {"color": _DARK_TEXT},
+                    "tooltip": {"trigger": "axis"},
+                    "grid": {"left": "12%", "right": "5%", "top": "8%", "bottom": "12%"},
+                    "xAxis": {
+                        "type": "category",
+                        "data": [],
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                    },
+                    "yAxis": {
+                        "type": "value",
+                        "scale": True,
+                        "axisLine": {"lineStyle": {"color": _DARK_TEXT}},
+                        "splitLine": {"lineStyle": {"color": "rgba(167,169,190,0.15)"}},
+                    },
+                    "series": [{
+                        "type": "line",
+                        "smooth": True,
+                        "lineStyle": {"color": "#a855f7"},
+                        "itemStyle": {"color": "#a855f7"},
+                        "data": [],
+                    }],
+                }).classes("w-full h-64")
+
     # === Update Functions ===
 
     async def update_summary():
@@ -533,6 +651,119 @@ async def dashboard_page(app_state: Dict[str, Any]) -> None:
             ''')
 
 
+    def update_charts():
+        """Refresh ECharts from real data. Each chart handled independently so
+        one failure does not break the others. Pushes data via chart.options
+        dict mutation + chart.update() (NiceGUI ui.echart canonical pattern)."""
+
+        # ① Cumulative realized P&L line (from DB trades)
+        try:
+            db = app_state.get("database")
+            dates_x = []
+            cum_y = []
+            if db:
+                trades = db.get_trades(limit=1000)
+                from collections import defaultdict
+                daily_pnl = defaultdict(float)
+                for t in trades:
+                    if getattr(t, "realized_pnl", None):
+                        date_str = t.timestamp.strftime("%Y-%m-%d")
+                        daily_pnl[date_str] += t.realized_pnl
+                running = 0.0
+                for d in sorted(daily_pnl.keys()):
+                    running += daily_pnl[d]
+                    dates_x.append(d)
+                    cum_y.append(round(running, 0))
+            pnl_chart.options["xAxis"]["data"] = dates_x
+            pnl_chart.options["series"][0]["data"] = cum_y
+            pnl_chart.update()
+        except Exception as e:
+            print(f"Error updating P&L chart: {e}")
+
+        # ② Position evaluation P&L horizontal bar (from app_state positions)
+        try:
+            positions = app_state.get("positions", [])
+            names = []
+            bar_data = []
+            for p in positions:
+                qty = float(p.get("qty", 0))
+                avg = float(p.get("avg_price", 0))
+                cur = float(p.get("current_price", 0))
+                if cur == 0:
+                    cur = avg
+                pnl_val = qty * (cur - avg)
+                label = p.get("name") or p.get("symbol", "Unknown")
+                names.append(label)
+                color = "#22c55e" if pnl_val >= 0 else "#ef4444"
+                bar_data.append({"value": round(pnl_val, 0), "itemStyle": {"color": color}})
+            position_chart.options["yAxis"]["data"] = names
+            position_chart.options["series"][0]["data"] = bar_data
+            position_chart.update()
+        except Exception as e:
+            print(f"Error updating position chart: {e}")
+
+        # ③ Market index change_pct horizontal bar (live yfinance with cache fallback)
+        try:
+            mi_service = app_state.get("market_index_service")
+            names = []
+            bar_data = []
+            if mi_service:
+                # 1) Try cache first (today's saved JSON)
+                data = mi_service.get_market_data() or {}
+                us_market = data.get("us_market", {}) or {}
+
+                # 2) Cache empty -> fall back to LIVE yfinance fetch (once, here only;
+                #    deliberately NOT on ui.timer because yf.download is slow).
+                #    fetch_us_market_close() returns {ticker: {name, change_pct, ...}}
+                #    and also persists the result to today's cache for later reads.
+                if not us_market:
+                    try:
+                        us_market = mi_service.fetch_us_market_close() or {}
+                    except Exception as live_e:
+                        print(f"Live US market fetch failed: {live_e}")
+                        us_market = {}
+
+                for ticker, info in us_market.items():
+                    if not isinstance(info, dict):
+                        continue
+                    change_pct = info.get("change_pct")
+                    if change_pct is None:
+                        continue
+                    names.append(info.get("name", ticker))
+                    color = "#22c55e" if change_pct >= 0 else "#ef4444"
+                    bar_data.append({"value": change_pct, "itemStyle": {"color": color}})
+            if not names:
+                market_chart.options["yAxis"]["data"] = ["市場データ未取得"]
+                market_chart.options["series"][0]["data"] = [0]
+            else:
+                market_chart.options["yAxis"]["data"] = names
+                market_chart.options["series"][0]["data"] = bar_data
+            market_chart.update()
+        except Exception as e:
+            print(f"Error updating market chart: {e}")
+            try:
+                market_chart.options["yAxis"]["data"] = ["市場データ未取得"]
+                market_chart.options["series"][0]["data"] = [0]
+                market_chart.update()
+            except Exception:
+                pass
+
+        # ④ VWAP history line (best-effort; skip if unavailable)
+        try:
+            ws_service = app_state.get("ws_service")
+            positions = app_state.get("positions", [])
+            if ws_service and positions:
+                symbol = positions[0].get("symbol", "")
+                if symbol:
+                    vwap_state = ws_service.get_vwap_state(symbol)
+                    history = list(getattr(vwap_state, "vwap_history", []) or [])
+                    if history:
+                        vwap_chart.options["xAxis"]["data"] = list(range(1, len(history) + 1))
+                        vwap_chart.options["series"][0]["data"] = [round(v, 2) for v in history]
+                        vwap_chart.update()
+        except Exception as e:
+            print(f"Error updating VWAP chart: {e}")
+
     # Master Update - Only called manually now
     async def update_dashboard():
         await update_summary()
@@ -541,6 +772,7 @@ async def dashboard_page(app_state: Dict[str, Any]) -> None:
         update_orders()
         update_daily_summary()
         update_date_details()
+        update_charts()
         # Logs updated separately
 
     # Initial Load

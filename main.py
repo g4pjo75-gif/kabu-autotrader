@@ -198,7 +198,7 @@ async def home():
     drawer = create_sidebar(app_state)
     create_header(drawer, "설정 및 연결")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await settings_page(app_state)
 
 
@@ -209,7 +209,7 @@ async def extraction():
     drawer = create_sidebar(app_state)
     create_header(drawer, "종목 발굴")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await extraction_page(app_state)
 
 
@@ -220,7 +220,7 @@ async def trading():
     drawer = create_sidebar(app_state)
     create_header(drawer, "자동 매매")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await trading_page(app_state)
 
 
@@ -231,7 +231,7 @@ async def dashboard():
     drawer = create_sidebar(app_state)
     create_header(drawer, "대시보드")
     
-    with ui.column().classes("w-full max-w-6xl mx-auto p-6"):
+    with ui.column().classes("w-full max-w-6xl mx-auto p-6 page-content"):
         await dashboard_page(app_state)
 
 
