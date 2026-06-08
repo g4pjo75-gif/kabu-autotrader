@@ -51,3 +51,4 @@ env/
 .ai/.checkpoints/
 .ai/logs/
 .ai/.runtime/
+.ccidb/
