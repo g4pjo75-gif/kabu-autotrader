@@ -189,9 +189,131 @@ async def settings_page(app_state: Dict[str, Any]) -> None:
             ui.button(
                 "한도 저장", on_click=save_daily_max_loss, icon="save"
             ).classes("bg-gray-600 text-white mb-2").props("dense")
-            
+
             ui.separator().classes("mb-2")
-            
+
+            # --- 발주 하드캡 설정 (発注ハードキャップ / Order Hard Caps) ---
+            ui.label("발주 하드캡 (発注ハードキャップ)").classes("text-white font-medium mb-1")
+            ui.label("주문 폭주를 막는 안전 상한값입니다. 운용 중 화면에서 변경할 수 있습니다.").classes("text-gray-400 text-xs mb-2")
+
+            # 1注文金額上限 (max_order_notional)
+            with ui.row().classes("w-full items-center gap-2 mb-2"):
+                ui.label("1주문 금액 상한").classes("text-white text-sm w-32")
+                saved_max_order_notional = "500000"
+                if db:
+                    saved_max_order_notional = db.get_setting("max_order_notional") or "500000"
+                max_order_notional_input = ui.number(
+                    label="¥",
+                    value=float(saved_max_order_notional),
+                    min=10000,
+                    max=10000000,
+                    step=10000,
+                ).classes("w-36").props("filled dark dense")
+                ui.label("엔").classes("text-gray-400 text-sm")
+
+            def save_max_order_notional():
+                val = max_order_notional_input.value
+                if val and val > 0:
+                    app_state["max_order_notional"] = float(val)
+                    if db:
+                        db.set_setting("max_order_notional", str(int(val)))
+                    ui.notify(f"1주문 금액 상한: ¥{val:,.0f} 저장 완료", type="positive")
+                else:
+                    ui.notify("0보다 큰 값으로 설정해주세요", type="warning")
+
+            ui.button(
+                "1주문 금액 상한 저장", on_click=save_max_order_notional, icon="save"
+            ).classes("bg-gray-600 text-white mb-2").props("dense")
+
+            # 1日発注回数上限 (daily_max_order_count)
+            with ui.row().classes("w-full items-center gap-2 mb-2"):
+                ui.label("1일 발주 횟수 상한").classes("text-white text-sm w-32")
+                saved_daily_max_order_count = "20"
+                if db:
+                    saved_daily_max_order_count = db.get_setting("daily_max_order_count") or "20"
+                daily_max_order_count_input = ui.number(
+                    label="회",
+                    value=int(saved_daily_max_order_count),
+                    min=1,
+                    max=1000,
+                    step=1,
+                ).classes("w-36").props("filled dark dense")
+                ui.label("회").classes("text-gray-400 text-sm")
+
+            def save_daily_max_order_count():
+                val = daily_max_order_count_input.value
+                if val and val > 0:
+                    app_state["daily_max_order_count"] = int(val)
+                    if db:
+                        db.set_setting("daily_max_order_count", str(int(val)))
+                    ui.notify(f"1일 발주 횟수 상한: {int(val)}회 저장 완료", type="positive")
+                else:
+                    ui.notify("1 이상으로 설정해주세요", type="warning")
+
+            ui.button(
+                "1일 발주 횟수 상한 저장", on_click=save_daily_max_order_count, icon="save"
+            ).classes("bg-gray-600 text-white mb-2").props("dense")
+
+            # 1日約定代金上限 (daily_max_turnover)
+            with ui.row().classes("w-full items-center gap-2 mb-2"):
+                ui.label("1일 약정 대금 상한").classes("text-white text-sm w-32")
+                saved_daily_max_turnover = "2000000"
+                if db:
+                    saved_daily_max_turnover = db.get_setting("daily_max_turnover") or "2000000"
+                daily_max_turnover_input = ui.number(
+                    label="¥",
+                    value=float(saved_daily_max_turnover),
+                    min=10000,
+                    max=100000000,
+                    step=100000,
+                ).classes("w-36").props("filled dark dense")
+                ui.label("엔").classes("text-gray-400 text-sm")
+
+            def save_daily_max_turnover():
+                val = daily_max_turnover_input.value
+                if val and val > 0:
+                    app_state["daily_max_turnover"] = float(val)
+                    if db:
+                        db.set_setting("daily_max_turnover", str(int(val)))
+                    ui.notify(f"1일 약정 대금 상한: ¥{val:,.0f} 저장 완료", type="positive")
+                else:
+                    ui.notify("0보다 큰 값으로 설정해주세요", type="warning")
+
+            ui.button(
+                "1일 약정 대금 상한 저장", on_click=save_daily_max_turnover, icon="save"
+            ).classes("bg-gray-600 text-white mb-2").props("dense")
+
+            # 同時建玉総額上限 (max_total_position_value)
+            with ui.row().classes("w-full items-center gap-2 mb-2"):
+                ui.label("동시 보유 총액 상한").classes("text-white text-sm w-32")
+                saved_max_total_position_value = "1000000"
+                if db:
+                    saved_max_total_position_value = db.get_setting("max_total_position_value") or "1000000"
+                max_total_position_value_input = ui.number(
+                    label="¥",
+                    value=float(saved_max_total_position_value),
+                    min=10000,
+                    max=100000000,
+                    step=100000,
+                ).classes("w-36").props("filled dark dense")
+                ui.label("엔").classes("text-gray-400 text-sm")
+
+            def save_max_total_position_value():
+                val = max_total_position_value_input.value
+                if val and val > 0:
+                    app_state["max_total_position_value"] = float(val)
+                    if db:
+                        db.set_setting("max_total_position_value", str(int(val)))
+                    ui.notify(f"동시 보유 총액 상한: ¥{val:,.0f} 저장 완료", type="positive")
+                else:
+                    ui.notify("0보다 큰 값으로 설정해주세요", type="warning")
+
+            ui.button(
+                "동시 보유 총액 상한 저장", on_click=save_max_total_position_value, icon="save"
+            ).classes("bg-gray-600 text-white mb-2").props("dense")
+
+            ui.separator().classes("mb-2")
+
             # --- 동적 매수 수량 설정 (Dynamic Lot Sizing) ---
             with ui.row().classes("w-full items-center justify-between mb-2"):
                 ui.label("동적 매수 수량 설정").classes("text-white font-medium")
