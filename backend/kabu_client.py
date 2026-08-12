@@ -99,6 +99,19 @@ class BaseKabuClient(ABC):
         pass
 
 
+
+    @abstractmethod
+    async def register_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        pass
+
+    @abstractmethod
+    async def unregister_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        pass
+
+    @abstractmethod
+    async def unregister_all_symbols(self) -> bool:
+        pass
+
 class KabuClient(BaseKabuClient):
     """
     Real Kabu Station API Client
@@ -116,12 +129,18 @@ class KabuClient(BaseKabuClient):
 
     async def _rate_limit_wait(self):
         """Ensure we don't exceed rate limit"""
-        now = asyncio.get_event_loop().time()
-        elapsed = now - self._last_request_time
-        min_interval = 1.0 / self._rate_limit
-        if elapsed < min_interval:
-            await asyncio.sleep(min_interval - elapsed)
-        self._last_request_time = asyncio.get_event_loop().time()
+        if not hasattr(self, '_rate_limit_lock'):
+            self._rate_limit_lock = asyncio.Lock()
+            
+        async with self._rate_limit_lock:
+            now = asyncio.get_event_loop().time()
+            elapsed = now - self._last_request_time
+            min_interval = 1.0 / self._rate_limit
+            if elapsed < min_interval:
+                await asyncio.sleep(min_interval - elapsed)
+                self._last_request_time = asyncio.get_event_loop().time()
+            else:
+                self._last_request_time = now
 
     async def _request(
         self, 
@@ -303,7 +322,7 @@ class KabuClient(BaseKabuClient):
             if days > 365: period = "2y"
             
             ticker = yf.Ticker(ticker_symbol)
-            hist = ticker.history(period=period)
+            hist = await asyncio.to_thread(ticker.history, period=period)
             
             if hist.empty:
                 print(f"Warning: No data found for {symbol}")
@@ -327,6 +346,38 @@ class KabuClient(BaseKabuClient):
         """Close the HTTP client"""
         await self._client.aclose()
 
+
+
+    async def register_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        if not symbols: return True
+        data = {"Symbols": [{"Symbol": str(s), "Exchange": exchange} for s in symbols]}
+        try:
+            await self._request("PUT", "/register", data)
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to register symbols: {e}")
+            return False
+
+    async def unregister_all_symbols(self) -> bool:
+        try:
+            await self._request("PUT", "/unregister/all")
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to unregister all symbols: {e}")
+            return False
+
+    async def unregister_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        if not symbols: return True
+        data = {"Symbols": [{"Symbol": str(s), "Exchange": exchange} for s in symbols]}
+        try:
+            await self._request("PUT", "/unregister", data)
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to unregister symbols: {e}")
+            return False
 
 class MockKabuClient(BaseKabuClient):
     """
@@ -429,7 +480,7 @@ class MockKabuClient(BaseKabuClient):
             
             try:
                 # Need to verify if the fast_info data is actually from today
-                info = ticker.info
+                info = await asyncio.to_thread(lambda: ticker.info)
                 timestamp = info.get("regularMarketTime", 0)
                 
                 if timestamp > 0:
@@ -437,8 +488,8 @@ class MockKabuClient(BaseKabuClient):
                     if market_date == today:
                         # Data is guaranteed to be from today!
                         if hasattr(ticker, 'fast_info'):
-                            last_price = float(ticker.fast_info.get("lastPrice", 0.0))
-                            prev_close = float(ticker.fast_info.get("previousClose", 0.0))
+                            last_price = float(await asyncio.to_thread(lambda: ticker.fast_info.get("lastPrice", 0.0)))
+                            prev_close = float(await asyncio.to_thread(lambda: ticker.fast_info.get("previousClose", 0.0)))
                             if last_price > 0:
                                 # Stale check: compare lastPrice against previous close.
                                 # If lastPrice ≈ previousClose (within 0.5%), yfinance may not
@@ -462,7 +513,7 @@ class MockKabuClient(BaseKabuClient):
                                 # Check 2: Cross-validate with actual historical close
                                 if not is_stale:
                                     try:
-                                        hist_5d = ticker.history(period="5d")
+                                        hist_5d = await asyncio.to_thread(ticker.history, period="5d")
                                         if not hist_5d.empty:
                                             past_data = hist_5d[hist_5d.index.date < today]
                                             if not past_data.empty:
@@ -493,7 +544,7 @@ class MockKabuClient(BaseKabuClient):
                  current_price = last_price
             else:
                 # 2. Fallback approach: 15-minute delayed intraday history
-                hist = ticker.history(period="1d", interval="1m")
+                hist = await asyncio.to_thread(ticker.history, period="1d", interval="1m")
                 
                 if not hist.empty:
                     today_data = hist[hist.index.date == today]
@@ -658,7 +709,7 @@ class MockKabuClient(BaseKabuClient):
             if days > 365: period = "2y"
             
             ticker = yf.Ticker(ticker_symbol)
-            hist = ticker.history(period=period)
+            hist = await asyncio.to_thread(ticker.history, period=period)
             
             if hist.empty:
                 print(f"Warning: No data found for {symbol}")
@@ -682,6 +733,16 @@ class MockKabuClient(BaseKabuClient):
         """No-op for mock client"""
         pass
 
+
+
+    async def register_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        return True
+
+    async def unregister_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        return True
+
+    async def unregister_all_symbols(self) -> bool:
+        return True
 
 class HybridKabuClient(BaseKabuClient):
     """
@@ -899,3 +960,12 @@ class HybridKabuClient(BaseKabuClient):
         """리소스 정리"""
         await self._real.close()
 
+
+    async def register_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        return await self._real.register_symbols(symbols, exchange)
+
+    async def unregister_symbols(self, symbols: list[str], exchange: int = 1) -> bool:
+        return await self._real.unregister_symbols(symbols, exchange)
+
+    async def unregister_all_symbols(self) -> bool:
+        return await self._real.unregister_all_symbols()

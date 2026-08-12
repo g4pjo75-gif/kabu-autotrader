@@ -63,6 +63,64 @@ class TradingService:
         self._breakout_strategy = HighBreakoutStrategy()
         # 종목별 이전 당일 고가 기록
         self._prev_day_highs = {}
+        # --- 가격 스파이크 필터 (Board API 비정상 가격 방지) ---
+        self._prev_prices: Dict[str, float] = {}      # 종목별 이전 주기 가격
+        self._spike_count: Dict[str, int] = {}         # 종목별 급락 횟수 추적
+        self._SPIKE_CONFIRM_COUNT = 3                  # 3회 연속 확인 시 정상 가격으로 인정
+        # --- 매도 주문 거절 추적 (무한 재시도 방지) ---
+        self._sell_reject_count: Dict[str, int] = {}   # 종목별 연속 매도 거절 횟수
+        self._SELL_REJECT_MAX = 3                      # 3회 연속 거절 시 재시도 중단
+
+    def _validate_price(self, symbol: str, new_price: float) -> tuple:
+        """
+        가격 스파이크 필터.
+        
+        Board API가 특별기배/연속약정기배 등의 상황에서 비정상적인 가격을 반환할 수 있다.
+        이전 주기 대비 급격한 가격 변동을 감지하고, 연속 확인될 때까지 '비신뢰'로 표시한다.
+        
+        Returns:
+            (validated_price, is_reliable)
+            - validated_price: 사용할 가격 (항상 new_price를 반환)
+            - is_reliable: False이면 트레일링 스탑 고점 업데이트에 사용하지 않음
+        """
+        prev_price = self._prev_prices.get(symbol)
+        
+        # 첫 가격이면 그대로 신뢰
+        if prev_price is None or prev_price <= 0:
+            self._prev_prices[symbol] = new_price
+            self._spike_count[symbol] = 0
+            return new_price, True
+        
+        change_pct = abs(new_price - prev_price) / prev_price * 100
+        
+        spike_threshold = float(self.app_state.get("spike_threshold_pct", 1.5))
+        if change_pct > spike_threshold:
+            # 스파이크 감지: 카운트 증가
+            self._spike_count[symbol] = self._spike_count.get(symbol, 0) + 1
+            
+            if self._spike_count[symbol] < self._SPIKE_CONFIRM_COUNT:
+                # 아직 확인 안 됨 → 가격은 사용하되 고점 갱신은 방지
+                logger.warning(
+                    f"[Trading] ⚠️ {symbol}: 가격 스파이크 감지 "
+                    f"(이전={prev_price:.0f} → 현재={new_price:.0f}, "
+                    f"변동={change_pct:.2f}%, "
+                    f"확인 {self._spike_count[symbol]}/{self._SPIKE_CONFIRM_COUNT})"
+                )
+                return new_price, False  # 가격은 사용하되 고점 갱신은 방지
+            else:
+                # N회 연속 같은 수준 → 정상 가격으로 인정
+                logger.info(
+                    f"[Trading] ✅ {symbol}: 가격 변동 확인 완료 "
+                    f"({prev_price:.0f} → {new_price:.0f}, {self._SPIKE_CONFIRM_COUNT}회 연속 확인)"
+                )
+                self._spike_count[symbol] = 0
+                self._prev_prices[symbol] = new_price
+                return new_price, True
+        else:
+            # 정상 변동 범위
+            self._spike_count[symbol] = 0
+            self._prev_prices[symbol] = new_price
+            return new_price, True
 
     def _log(self, message: str, level: str = "INFO"):
         """Log to console, app_state for UI, and file logger"""
@@ -195,7 +253,18 @@ class TradingService:
             
             # Normalize keys to lowercase for internal use
             normalized_positions = []
+            
+            # 봇의 설정된 계좌 및 거래 방식
+            bot_account = int(self.app_state.get("account_type", 4))
+            bot_margin = int(self.app_state.get("cash_margin", 1))
+            
             for p in raw_positions:
+                # 봇이 관리하지 않는 포지션(타 계좌, 신용 등) 무시
+                p_account = int(p.get("AccountType", 4))
+                p_security = int(p.get("SecurityType", 1))
+                if p_account != bot_account or p_security != bot_margin:
+                    continue
+                    
                 qty = p.get("Qty", p.get("LeavesQty", 0))
                 # API may return float (e.g. 100.0) — convert to int
                 qty = int(float(qty)) if qty else 0
@@ -274,10 +343,14 @@ class TradingService:
                 logger.warning(f"[Trading] Skip sell check for {symbol}: price={current_price}")
                 continue
             
+            # --- 가격 스파이크 필터 적용 ---
+            validated_price, is_reliable = self._validate_price(symbol, current_price)
+            
             entry_price = pos.get("avg_price", 0)
             pos_qty = pos.get("qty", 0)
             pnl_pct = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
-            logger.info(f"[Trading] Position {symbol}: entry={entry_price:.0f}, current={current_price:.0f}, pnl={pnl_pct:+.2f}%, qty={pos_qty}")
+            reliability_tag = "" if is_reliable else " ⚠️SPIKE"
+            logger.info(f"[Trading] Position {symbol}: entry={entry_price:.0f}, current={current_price:.0f}, pnl={pnl_pct:+.2f}%, qty={pos_qty}{reliability_tag}")
             
             # Price validity check: skip if price deviates >20% from entry (likely data error)
             # Japanese stocks have daily price limits (値幅制限), moves >20% are abnormal
@@ -323,6 +396,14 @@ class TradingService:
                 DynamicLossCutManager(loss_cut_percent=lc_pct, time_stop_minutes=time_stop_mins)
             )
             
+            # --- 비신뢰 가격일 때 트레일링 스탑 고점 보호 ---
+            # 스파이크 가격이 고점을 갱신하지 않도록, 평가 전에 현재 고점을 저장
+            saved_high_trailing = None
+            saved_high_stepped = None
+            if not is_reliable:
+                saved_high_trailing = TrailingStopManager._high_prices.get(symbol)
+                saved_high_stepped = SteppedTrailingManager._high_prices.get(symbol)
+            
             order_params = None
             triggered_strategy = None
             
@@ -340,6 +421,23 @@ class TradingService:
                 else:
                     logger.debug(f"[Trading] {symbol}: {strategy.name} not triggered")
             
+            # --- 비신뢰 가격에 의한 고점 갱신 롤백 ---
+            if not is_reliable:
+                # 트레일링 스탑이 발동하지 않았으면, 스파이크 가격에 의한 고점 갱신을 원복
+                if not (triggered_strategy and isinstance(triggered_strategy, (TrailingStopManager, SteppedTrailingManager))):
+                    if saved_high_trailing is not None:
+                        TrailingStopManager._high_prices[symbol] = saved_high_trailing
+                        logger.debug(f"[Trading] {symbol}: TrailingStop 고점 롤백 → {saved_high_trailing:.0f} (스파이크 가격 무시)")
+                    elif symbol in TrailingStopManager._high_prices:
+                        # 스파이크로 인해 새로 생성된 고점 삭제
+                        del TrailingStopManager._high_prices[symbol]
+                    
+                    if saved_high_stepped is not None:
+                        SteppedTrailingManager._high_prices[symbol] = saved_high_stepped
+                        logger.debug(f"[Trading] {symbol}: SteppedTrailing 고점 롤백 → {saved_high_stepped:.0f} (스파이크 가격 무시)")
+                    elif symbol in SteppedTrailingManager._high_prices:
+                        del SteppedTrailingManager._high_prices[symbol]
+            
             # Execute if any strategy triggered
             if order_params and triggered_strategy and order_params.get("qty", 0) > 0:
                 self._log(f"Sell Signal for {symbol} [{triggered_strategy.name}]: {order_params.get('reason', '')}")
@@ -355,20 +453,56 @@ class TradingService:
                     pnl = (sell_price - avg_price) * qty
                     order_params["qty"] = qty
                     order_params["realized_pnl"] = pnl
+                    order_params["avg_price"] = avg_price
                     # Fix #4: Preserve symbol_name for DB recording
                     order_params["name"] = getattr(board, 'symbol_name', pos.get("name", symbol))
                     
                     self._log(f"Executing SELL: {symbol} qty={qty}, price={sell_price:.0f}, pnl={pnl:+,.0f}")
+                    
+                    # 매도 거절 횟수 체크 — 무한 재시도 방지
+                    reject_count = self._sell_reject_count.get(symbol, 0)
+                    if reject_count >= self._SELL_REJECT_MAX:
+                        # 무한 텔레그램 발송 방지를 위해 카운터 계속 증가
+                        self._sell_reject_count[symbol] = reject_count + 1
+                        
+                        # 최대 5회까지만 텔레그램 경고 발송
+                        if reject_count < self._SELL_REJECT_MAX + 5:
+                            self._log(
+                                f"🚨 {symbol} 매도 주문 {reject_count}회 연속 거절! 재시도 중단. "
+                                f"증권사 앱에서 수동 매도 필요!", "ERROR"
+                            )
+                            # 텔레그램 긴급 알림
+                            notifier = self.app_state.get("notifier")
+                            if notifier and notifier.is_configured:
+                                asyncio.create_task(notifier.send_system_alert(
+                                    f"🚨 매도 주문 연속 거절!\n"
+                                    f"종목: {symbol}\n"
+                                    f"상태: 자동 매도 중단 (수동 처리 요망)\n"
+                                    f"이 알림은 최대 5회까지만 발송됩니다.",
+                                    "ERROR"
+                                ))
+                        continue
+                    
                     ext_strategy = self._symbol_extraction_map.get(symbol, "")
                     target_universe = self._symbol_universe_map.get(symbol, "")
                     buy_rank = self._symbol_rank_map.get(symbol, 0)
                     success = await self._execute_order(client, order_params, "SELL", triggered_strategy.name, ext_strategy, target_universe, buy_rank)
                     if success:
                         sold_this_cycle.add(symbol)
+                        self._sell_reject_count.pop(symbol, None)  # 성공 시 거절 카운터 리셋
                         
                         # Reset trailing stop tracking for this symbol
                         TrailingStopManager.reset_tracking(symbol)
                         SteppedTrailingManager.reset_tracking(symbol)
+                        # 스파이크 필터 추적도 리셋
+                        self._prev_prices.pop(symbol, None)
+                        self._spike_count.pop(symbol, None)
+                    else:
+                        # 매도 실패 시 거절 카운터 증가
+                        self._sell_reject_count[symbol] = reject_count + 1
+                        self._log(
+                            f"⚠️ {symbol} 매도 거절 ({reject_count + 1}/{self._SELL_REJECT_MAX}회)", "WARNING"
+                        )
             else:
                 logger.debug(f"[Trading] {symbol}: no sell signal triggered")
         
@@ -560,6 +694,45 @@ class TradingService:
                 logger.debug(f"[Trading] {symbol}: 당일 가격 미확인, 다음 사이클에서 재시도")
                 continue
             
+            # --- 매수 측 가격 스파이크 필터 ---
+            validated_price, is_reliable = self._validate_price(symbol, current_price)
+            if not is_reliable:
+                logger.warning(
+                    f"[Trading] {symbol}: 매수 스킵 (가격 스파이크 미확인, "
+                    f"다음 사이클에서 재시도)"
+                )
+                continue
+            
+            # VWAP 전략 파라미터를 개별 전략 설정(config_json)에서 가져오기
+            config_id = stock.get("strategy_id")
+            automation_service = self.app_state.get("automation_service")
+            strategy_config = None
+            if automation_service and config_id:
+                strategy_config = automation_service.get_config(config_id)
+            
+            cfg = strategy_config.config_json if strategy_config else {}
+            
+            vwap_upper = float(cfg.get("vwap_upper_band", self.app_state.get("vwap_upper_band", 1.5)))
+            vwap_lower = float(cfg.get("vwap_lower_band", self.app_state.get("vwap_lower_band", 1.5)))
+            vwap_bounce = float(cfg.get("vwap_bounce_ratio", self.app_state.get("vwap_bounce_ratio", 20.0)))
+            vwap_max_pullback = float(cfg.get("max_pullback_pct", self.app_state.get("max_pullback_pct", 5.0)))
+            vwap_min_pullback = float(cfg.get("min_pullback_pct", self.app_state.get("min_pullback_pct", 1.2)))
+            vwap_bounce_wait_minutes = float(cfg.get("vwap_bounce_wait_minutes", self.app_state.get("vwap_bounce_wait_minutes", 2.0)))
+            vwap_abs_bounce = float(cfg.get("vwap_absolute_min_bounce_pct", 0.8)) # Default 0.8% for backward compat
+            vwap_breakdown_limit = float(cfg.get("vwap_breakdown_limit_pct", 1.0)) # Default 1.0%
+
+            min_intraday_range_pct = float(self.app_state.get("min_intraday_range_pct", 1.2))
+
+            self._vwap_strategy.set_param("vwap_upper_band", vwap_upper)
+            self._vwap_strategy.set_param("vwap_lower_band", vwap_lower)
+            self._vwap_strategy.set_param("vwap_bounce_ratio", vwap_bounce)
+            self._vwap_strategy.set_param("min_pullback_pct", vwap_min_pullback)
+            self._vwap_strategy.set_param("max_pullback_pct", vwap_max_pullback)
+            self._vwap_strategy.set_param("bounce_wait_minutes", vwap_bounce_wait_minutes)
+            self._vwap_strategy.set_param("absolute_min_bounce_pct", vwap_abs_bounce)
+            self._vwap_strategy.set_param("breakdown_limit_pct", vwap_breakdown_limit)
+            self._vwap_strategy.set_param("min_intraday_range_pct", min_intraday_range_pct)
+            
             stock_name = getattr(board, 'symbol_name', stock.get("name", ""))
             
             # Update IntradayBarAccumulator with board data (for VWAP tracking)
@@ -606,28 +779,36 @@ class TradingService:
                 # VWAP 전략 파라미터를 앱 설정에서 가져오기
                 vwap_upper = float(self.app_state.get("vwap_upper_band", 0.5))
                 vwap_lower = float(self.app_state.get("vwap_lower_band", 0.2))
-                vwap_bounce = float(self.app_state.get("vwap_min_bounce", 0.2))
-                vwap_max_pullback = float(self.app_state.get("max_pullback_pct", 1.5))
+                vwap_bounce = float(self.app_state.get("vwap_bounce_ratio", 30.0))
+                vwap_max_pullback = float(self.app_state.get("max_pullback_pct", 5.0))
+                vwap_min_pullback = float(self.app_state.get("min_pullback_pct", 1.5))
+                vwap_bounce_wait_minutes = float(self.app_state.get("vwap_bounce_wait_minutes", 3.0))
+                min_intraday_range_pct = float(self.app_state.get("min_intraday_range_pct", 1.2))
                 
                 self._vwap_strategy.set_param("vwap_upper_band", vwap_upper)
                 self._vwap_strategy.set_param("vwap_lower_band", vwap_lower)
-                self._vwap_strategy.set_param("min_bounce_pct", vwap_bounce)
+                self._vwap_strategy.set_param("vwap_bounce_ratio", vwap_bounce)
+                self._vwap_strategy.set_param("min_pullback_pct", vwap_min_pullback)
                 self._vwap_strategy.set_param("max_pullback_pct", vwap_max_pullback)
+                self._vwap_strategy.set_param("bounce_wait_minutes", vwap_bounce_wait_minutes)
+                self._vwap_strategy.set_param("min_intraday_range_pct", min_intraday_range_pct)
                 
                 # Real-time evaluation (VWAP, etc.)
-                vwap = vwap_state.vwap
+                # 증권사 API의 당일 전체 누적 VWAP과 당일 최고가를 최우선으로 사용하여 오전 데이터 누락 방지
+                vwap = getattr(board, 'vwap', 0.0) if getattr(board, 'vwap', 0.0) > 0 else vwap_state.vwap
                 vwap_history = getattr(vwap_state, "vwap_history", [])
                 
                 result = self._vwap_strategy.evaluate_realtime(
                     symbol=symbol,
                     current_price=current_price,
-                    open_price=vwap_state.open_price or getattr(board, 'open_price', 0),
-                    day_high=vwap_state.day_high or getattr(board, 'high_price', 0),
+                    open_price=getattr(board, 'open_price', 0) or vwap_state.open_price,
+                    day_high=getattr(board, 'high_price', 0) or vwap_state.day_high,
                     vwap=vwap,
-                    recent_low=vwap_state.recent_low,
+                    recent_low=vwap_state.pullback_low,
                     recent_prices=vwap_state.recent_prices,
                     vwap_history=vwap_history,
-                    market_trend=self._market_trend
+                    market_trend=self._market_trend,
+                    vwap_state=vwap_state
                 )
                 
                 if result.signal:
@@ -639,9 +820,12 @@ class TradingService:
                         f"score={result.score:.1f}, {result.details})"
                     )
                 else:
-                    logger.debug(
-                        f"[Trading] {symbol}: VWAP 조건 미충족 "
-                        f"(VWAP={vwap_state.vwap:.0f}, {result.details})"
+                    fail_reasons = result.details.get("fail_reasons", [])
+                    fail_summary = ", ".join(fail_reasons) if fail_reasons else "unknown"
+                    logger.info(
+                        f"[Trading] {symbol}: VWAP 미충족 [{fail_summary}] "
+                        f"(price={current_price:.0f}, VWAP={vwap_state.vwap:.0f}, "
+                        f"high={result.details.get('day_high', 0)}, low={result.details.get('recent_low', 0)})"
                     )
                     continue
             elif use_breakout:
@@ -665,17 +849,30 @@ class TradingService:
                 self._breakout_strategy.set_param("volume_spurt_ratio", volume_spurt)
                 self._breakout_strategy.set_param("max_daily_rise_pct", max_daily_rise)
                 
+                # 심층 붕괴(Drawdown) 판단을 위한 pullback_low 전달
+                # bar_accumulator가 수집한 현재 종목의 상태 정보를 가져옴
+                vwap_state = None
+                if accumulator:
+                    vwap_state = accumulator.get_vwap_state(symbol)
+                pullback_low = getattr(vwap_state, "pullback_low", 0.0) if vwap_state else 0.0
+                
                 result = self._breakout_strategy.evaluate_realtime(
                     symbol=symbol,
                     current_price=current_price,
                     open_price=open_price,
                     day_high=prev_high,
                     cumulative_volume=cumulative_volume,
-                    market_trend=self._market_trend
+                    market_trend=self._market_trend,
+                    pullback_low=pullback_low
                 )
                 
                 # 평가 이후 이전 최고가 업데이트 (현재 고가와 현재가 중 최대값으로 업데이트)
-                self._prev_day_highs[symbol] = max(prev_high, high_price, current_price)
+                # 스파이크 가격일 경우 이전 최고가를 보호 (current_price 제외)
+                if is_reliable:
+                    self._prev_day_highs[symbol] = max(prev_high, high_price, current_price)
+                else:
+                    self._prev_day_highs[symbol] = max(prev_high, high_price)
+                    logger.debug(f"[Trading] {symbol}: 고가돌파 고점 업데이트에서 스파이크 가격 제외 (current_price={current_price:.0f})")
                 
                 if result.signal:
                     buy_approved = True
@@ -858,10 +1055,11 @@ class TradingService:
         
         try:
             # 1. Send Order to API
-            # 실매매: 성행(Market) 주문, 시뮬레이션: 지정가(Limit)
+            # 실매매: 하이브리드 주문 (지정가 → 5분 후 미체결 시 성행 전환)
+            # 시뮬레이션: 지정가(Limit)
             if is_live:
-                front_order_type = 10  # 10: Market (成行)
-                order_price = 0.0  # 성행은 가격 0
+                front_order_type = 20  # 20: Limit (指値) — 먼저 지정가로 시도
+                order_price = float(price)
             else:
                 front_order_type = 20  # 20: Limit (指値)
                 order_price = float(price)
@@ -886,13 +1084,37 @@ class TradingService:
             
             mode_tag = "🔴 LIVE" if is_live else "SIM"
             self._log(f"[{mode_tag}] Sending {side}: {symbol} qty={qty} " +
-                      (f"成行" if is_live else f"@¥{price:,.0f}"))
+                      (f"指値@¥{order_price:,.0f}" if is_live else f"@¥{price:,.0f}"))
             
             result = await client.send_order(order_schema)
             
             if result.get("Result") == 0:
                 order_id = result.get("OrderId", "")
                 self._log(f"[{mode_tag}] Order Sent: {symbol} {side} {qty}@{price}")
+                
+                # 실매매: 하이브리드 주문 — 지정가 체결 대기 후 미체결 시 성행 전환
+                # 매수: 지정가 대기 (유리한 가격에 체결될 때까지 여유 있게 대기)
+                # 매도: 지정가 대기 (손절/익절 시 빠르게 체결해야 하므로 짧게)
+                if side == "SELL":
+                    hybrid_timeout = int(self.app_state.get("hybrid_sell_timeout_sec", 60))
+                else:
+                    hybrid_timeout = int(self.app_state.get("hybrid_buy_timeout_sec", 300))
+                final_price = price
+                if is_live:
+                    filled = await self._wait_for_fill_or_convert_market(
+                        client=client,
+                        order_id=order_id,
+                        symbol=symbol,
+                        side=side,
+                        qty=qty,
+                        price=price,
+                        order_deliv_type=order_deliv_type,
+                        order_fund_type=order_fund_type,
+                        timeout_seconds=hybrid_timeout,
+                    )
+                    if not filled:
+                        self._log(f"[{mode_tag}] Hybrid order failed: {symbol} {side} — 체결 실패", "ERROR")
+                        return False
                 
                 trade_record = TradeRecord(
                     id=None,
@@ -914,24 +1136,24 @@ class TradingService:
                 self.db.add_trade(trade_record)
                 self._log(f"[{mode_tag}] Trade saved to DB: {order_id}")
                 
-                # 실매매: 텔레그램 실시간 알림
-                if is_live:
-                    notifier = self.app_state.get("notifier")
-                    if notifier and notifier.is_configured:
-                        alert = TradeAlert(
-                            symbol=symbol,
-                            symbol_name=params.get("name", symbol),
-                            side=side,
-                            qty=qty,
-                            price=price,
-                            status="FILLED",
-                            strategy=strategy_name,
-                            timestamp=datetime.now(),
-                        )
-                        try:
-                            await notifier.send_trade_alert(alert)
-                        except Exception as e:
-                            logger.error(f"[Trading] Telegram alert failed: {e}")
+                # 실매매/시뮬레이션 모두 텔레그램 실시간 알림
+                notifier = self.app_state.get("notifier")
+                if notifier and notifier.is_configured:
+                    mode_prefix = "" if is_live else "[SIM] "
+                    alert = TradeAlert(
+                        symbol=symbol,
+                        symbol_name=f"{mode_prefix}{params.get('name', symbol)}",
+                        side=side,
+                        qty=qty,
+                        price=price,
+                        status="FILLED",
+                        strategy=strategy_name,
+                        timestamp=datetime.now(),
+                    )
+                    try:
+                        await notifier.send_trade_alert(alert)
+                    except Exception as e:
+                        logger.error(f"[Trading] Telegram alert failed: {e}")
                 
                 # 일일 손익 누적 (매도 시)
                 if is_live and side == "SELL":
@@ -944,6 +1166,20 @@ class TradingService:
                     self._log(
                         f"[{mode_tag}] 일일 누적 손익: ¥{self._daily_realized_pnl:+,.0f}"
                     )
+                
+                # 실매매: 체결가 조회 및 DB 업데이트 (비동기)
+                if is_live:
+                    asyncio.create_task(
+                        self._update_live_execution(
+                            client=client,
+                            order_id=order_id,
+                            symbol=symbol,
+                            side=side,
+                            qty=qty,
+                            params=params,
+                        )
+                    )
+                    
                 return True
             else:
                 error_msg = result.get("Message", "Unknown error")
@@ -953,3 +1189,196 @@ class TradingService:
         except Exception as e:
             self._log(f"Order execution failed: {e}", "ERROR")
             return False
+
+    async def _wait_for_fill_or_convert_market(
+        self, client, order_id: str, symbol: str, side: str, qty: int, price: float,
+        order_deliv_type: int, order_fund_type: str, timeout_seconds: int = 300,
+    ) -> bool:
+        """
+        하이브리드 주문: 지정가 체결 대기 → 타임아웃 시 성행 전환.
+        
+        지정가 주문을 넣은 후, 30초 간격으로 체결 여부를 확인합니다.
+        timeout_seconds(기본 5분) 내에 체결되지 않으면:
+          1. 기존 지정가 주문을 취소
+          2. 성행(Market) 주문으로 재주문
+        
+        Returns:
+            True: 체결 성공 (지정가 또는 성행)
+            False: 체결 실패
+        """
+        check_interval = 30  # 30초 간격으로 체결 확인
+        elapsed = 0
+        
+        self._log(f"[🔴 LIVE] {symbol} {side} 지정가 @¥{price:,.0f} 체결 대기 시작 (최대 {timeout_seconds}초)")
+        
+        last_order = None
+        while elapsed < timeout_seconds:
+            await asyncio.sleep(check_interval)
+            elapsed += check_interval
+            
+            try:
+                # 주문 상태 조회
+                orders = await client.get_orders()
+                order = next((o for o in orders if str(o.get("OrderId")) == str(order_id)), None)
+                
+                if not order:
+                    # 주문을 찾지 못한 경우 — 포지션 API로 실제 체결 여부 확인
+                    try:
+                        positions = await client.get_positions()
+                        still_holding = any(
+                            str(p.get("Symbol", "")) == str(symbol) and int(p.get("LeavesQty", 0)) > 0
+                            for p in positions
+                        )
+                        if not still_holding:
+                            self._log(f"[🔴 LIVE] {symbol} {side} 체결 완료 확인 (주문 조회 불가 + 포지션 없음)")
+                            return True
+                        else:
+                            self._log(f"[🔴 LIVE] {symbol} {side} 주문 조회 불가하나 포지션 잔존 — 미체결로 판단", "WARNING")
+                            # 포지션이 남아있으면 체결 안 된 것 → 타임아웃 로직으로 빠짐
+                            break
+                    except Exception as pos_e:
+                        logger.error(f"[Hybrid] 포지션 확인 중 오류: {pos_e}")
+                        # 포지션 확인 실패 시 안전하게 미체결로 판단
+                        break
+                
+                last_order = order
+                order_state = order.get("State", 0)
+                # kabu API State: 1=대기, 2=처리중, 3=처리완료, 4=정정취소대기, 5=주문완료, 6=취소완료
+                
+                if order_state == 5:  # 체결 완료
+                    self._log(f"[🔴 LIVE] {symbol} {side} 지정가 @¥{price:,.0f} 체결 완료! ({elapsed}초 경과)")
+                    return True
+                elif order_state == 6:  # 이미 취소됨 (외부 취소)
+                    self._log(f"[🔴 LIVE] {symbol} {side} 주문이 외부에서 취소됨", "WARNING")
+                    return False
+                else:
+                    # 미체결 — 대기 계속
+                    self._log(f"[🔴 LIVE] {symbol} {side} 지정가 미체결 대기 중... ({elapsed}/{timeout_seconds}초)")
+                    
+            except Exception as e:
+                logger.error(f"[Hybrid] 체결 확인 중 오류: {e}")
+                # 오류 시 다음 체크까지 대기 계속
+                continue
+        
+        # === 타임아웃: 지정가 취소 → 성행 전환 ===
+        unfilled_qty = int(qty)
+        if last_order:
+            cum_qty = int(last_order.get("CumQty", 0))
+            unfilled_qty = int(qty) - cum_qty
+            
+        if unfilled_qty <= 0:
+            self._log(f"[🔴 LIVE] {symbol} {side} 지정가 전량 체결 완료 확인 (타임아웃 시점)")
+            return True
+            
+        self._log(f"[🔴 LIVE] {symbol} {side} 지정가 미체결 ({timeout_seconds}초 초과) → 잔량 {unfilled_qty}주 성행 전환 시작")
+        
+        try:
+            # 1. 기존 지정가 주문 취소
+            cancel_result = await client.cancel_order(order_id)
+            if cancel_result.get("Result") == 0:
+                self._log(f"[🔴 LIVE] {symbol} {side} 지정가 주문 취소 완료 (OrderId: {order_id})")
+            else:
+                cancel_msg = cancel_result.get("Message", "Unknown")
+                self._log(f"[🔴 LIVE] {symbol} {side} 지정가 취소 실패: {cancel_msg}", "WARNING")
+                # 취소 실패 시 — 이미 체결되었을 가능성이 있으므로 True 반환
+                return True
+            
+            await asyncio.sleep(1.0)  # 취소 처리 대기
+            
+            # 2. 성행(Market) 주문으로 재주문
+            market_schema = OrderSchema(
+                symbol=symbol,
+                side="2" if side == "BUY" else "1",
+                qty=unfilled_qty,
+                price=0.0,  # 성행은 가격 0
+                front_order_type=10,  # 10: Market (成行)
+                fund_type=order_fund_type,
+                deliv_type=order_deliv_type,
+            )
+            
+            self._log(f"[🔴 LIVE] {symbol} {side} 성행 전환 주문 발송")
+            market_result = await client.send_order(market_schema)
+            
+            if market_result.get("Result") == 0:
+                new_order_id = market_result.get("OrderId", "")
+                self._log(f"[🔴 LIVE] {symbol} {side} 성행 주문 체결 완료 (OrderId: {new_order_id})")
+                return True
+            else:
+                error_msg = market_result.get("Message", "Unknown error")
+                self._log(f"[🔴 LIVE] {symbol} {side} 성행 주문 실패: {error_msg}", "ERROR")
+                
+                # 하한가 지정가 우회 (성행 금지 종목 대응)
+                if side == "SELL":
+                    self._log(f"[🔴 LIVE] {symbol} {side} 성행 주문 거절됨. 하한가 지정가 우회 주문 시도...")
+                    try:
+                        board = await client.get_board(symbol)
+                        lower_limit = getattr(board, 'lower_limit', 0.0)
+                        if lower_limit > 0:
+                            fallback_schema = OrderSchema(
+                                symbol=symbol,
+                                side="1", # SELL
+                                qty=unfilled_qty,
+                                price=lower_limit,
+                                front_order_type=20,  # 20: Limit (지정가)
+                                fund_type=order_fund_type,
+                                deliv_type=order_deliv_type,
+                            )
+                            fb_result = await client.send_order(fallback_schema)
+                            if fb_result.get("Result") == 0:
+                                self._log(f"[🔴 LIVE] {symbol} {side} 하한가 우회 주문 접수 완료 (OrderId: {fb_result.get('OrderId', '')})")
+                                return True
+                            else:
+                                self._log(f"[🔴 LIVE] {symbol} {side} 하한가 우회 주문 실패: {fb_result.get('Message', '')}", "ERROR")
+                        else:
+                            self._log(f"[🔴 LIVE] {symbol} 하한가 정보를 가져올 수 없어 우회 불가", "WARNING")
+                    except Exception as fe:
+                        self._log(f"[🔴 LIVE] {symbol} 하한가 우회 시도 중 오류: {fe}", "ERROR")
+                        
+                return False
+                
+        except Exception as e:
+            self._log(f"[Hybrid] 성행 전환 중 오류: {e}", "ERROR")
+            return False
+
+    async def _update_live_execution(self, client, order_id: str, symbol: str, side: str, qty: int, params: Dict):
+        """실매매 성행 주문 후 실제 체결가를 조회하여 DB를 업데이트합니다."""
+        await asyncio.sleep(2.0)  # 체결 대기
+        try:
+            executed_price = 0.0
+            
+            # 1. 매수: 포지션에서 확인 (성행 체결 후 포지션에 반영됨)
+            if side == "BUY":
+                positions = await client.get_positions()
+                pos = next((p for p in positions if p.get("Symbol") == symbol), None)
+                if pos and pos.get("Price", 0) > 0:
+                    executed_price = float(pos.get("Price"))
+                    
+            # 2. 매도: (또는 포지션에서 못 찾은 경우) 주문 내역에서 확인
+            if executed_price <= 0:
+                orders = await client.get_orders()
+                order = next((o for o in orders if o.get("OrderId") == order_id), None)
+                if order:
+                    details = order.get("Details", [])
+                    if details and details[0].get("Price"):
+                        executed_price = float(details[0].get("Price"))
+            
+            if executed_price > 0:
+                self._log(f"[🔴 LIVE] {symbol} {side} 실제 체결가 확인: ¥{executed_price:,.0f} (주문가: ¥{params.get('price', 0):,.0f})")
+                
+                # 매도인 경우 PNL 재계산
+                new_pnl = None
+                if side == "SELL":
+                    avg_price = float(params.get("avg_price", 0))
+                    if avg_price > 0:
+                        new_pnl = (executed_price - avg_price) * qty
+                        # 누적 손익 보정 (기존 추정 pnl을 빼고 새 pnl 더하기)
+                        old_pnl = float(params.get("realized_pnl", 0))
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        if self._daily_pnl_date == today:
+                            self._daily_realized_pnl = self._daily_realized_pnl - old_pnl + new_pnl
+                            self._log(f"[🔴 LIVE] 일일 누적 손익 보정: 확정 P&L ¥{new_pnl:+,.0f} (오차: ¥{new_pnl - old_pnl:+,.0f}) → 누적: ¥{self._daily_realized_pnl:+,.0f}")
+                
+                # DB 업데이트
+                self.db.update_trade_price(order_id, executed_price, new_pnl)
+        except Exception as e:
+            logger.error(f"[_update_live_execution] Failed to update execution price for {symbol}: {e}")

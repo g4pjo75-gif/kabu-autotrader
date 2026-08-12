@@ -234,7 +234,7 @@ class ReportService:
         from collections import OrderedDict
         grouped = OrderedDict()
         for c in candidates:
-            universe_label = "N225" if c.target_universe == "nikkei225" else "JPX400" if c.target_universe == "nikkei400" else c.target_universe
+            universe_label = "N225" if c.target_universe == "nikkei225" else "JPX400" if c.target_universe == "nikkei400" else "RANKING" if c.target_universe == "ranking_leaders" else c.target_universe
             key = f"{c.extraction_strategy} ({universe_label})"
             if key not in grouped:
                 grouped[key] = []
@@ -248,7 +248,7 @@ class ReportService:
                 sell_lookup[(ext, t.target_universe, t.symbol)] = t
                 universe_label = ""
                 if t.target_universe:
-                    universe_label = "N225" if t.target_universe == "nikkei225" else "JPX400" if t.target_universe == "nikkei400" else t.target_universe
+                    universe_label = "N225" if t.target_universe == "nikkei225" else "JPX400" if t.target_universe == "nikkei400" else "RANKING" if t.target_universe == "ranking_leaders" else t.target_universe
                 sell_lookup[(ext, universe_label, t.symbol)] = t
 
         sell_by_symbol = {}
@@ -288,7 +288,7 @@ class ReportService:
             ext = t.extraction_strategy or t.strategy_name or "Unknown"
             universe_label = ""
             if t.target_universe:
-                universe_label = "N225" if t.target_universe == "nikkei225" else "JPX400" if t.target_universe == "nikkei400" else t.target_universe
+                universe_label = "N225" if t.target_universe == "nikkei225" else "JPX400" if t.target_universe == "nikkei400" else "RANKING" if t.target_universe == "ranking_leaders" else t.target_universe
             name = f"{ext} ({universe_label})" if universe_label else ext
             strategy_stats[name]["symbols"].append(t.symbol)
             strategy_counted_symbols[name].add(t.symbol)
@@ -841,6 +841,99 @@ class ReportService:
             lines.append("")
         else:
             lines.append("_당일 거래 없음_")
+            lines.append("")
+
+        # === 5. Settings ===
+        lines.append("## ⚙️ 매매 및 전략 설정 (당일 기준)")
+        lines.append("")
+        lines.append("### 전역 매매 설정")
+        lines.append("")
+        
+        settings = self.db.get_all_settings()
+        
+        lines.append("| 설정 항목 | 값 |")
+        lines.append("|---|---|")
+        
+        global_keys = [
+            ("take_profit_pct", "익절 %"),
+            ("loss_cut_pct", "손절 %"),
+            ("trailing_stop_pct", "트레일링 스탑 %"),
+            ("max_trades_per_symbol", "당일 매수 제한 (종목당)"),
+            ("max_buy_price", "매수 상한가"),
+            ("target_timeout_minutes", "대기 타임아웃 (분)"),
+            ("stepped_trailing_enabled", "단계별 트레일링 스탑 활성화"),
+            ("stepped_trailing_activate_pct", "1단계 활성화 %"),
+            ("stepped_trailing_step1_pct", "1단계 트레일링 %"),
+            ("stepped_trailing_step2_pct", "2단계 강화 기준 %"),
+            ("stepped_trailing_step2_trail_pct", "2단계 트레일링 %"),
+            ("breakout_margin_pct", "돌파 마진율 (%)"),
+            ("volume_spurt_ratio", "거래량 급증 배수"),
+            ("max_daily_rise_pct", "당일 최대 상승률 (%)"),
+            ("market_index_down_threshold", "지수 급락 기준 (%)"),
+            ("market_index_up_threshold", "지수 회복 기준 (%)"),
+            ("global_nikkei_gap_threshold", "갭상승 추출 지연 기준 (%)"),
+        ]
+        
+        for k, label in global_keys:
+            val = settings.get(k, "-")
+            lines.append(f"| {label} | {val} |")
+        
+        lines.append("")
+        lines.append("### 활성 전략 설정")
+        lines.append("")
+        
+        configs = self.db.get_automation_configs(active_only=True)
+        if configs:
+            lines.append("| 전략 이름 | 대상 종목군 | 시작 | 종료 | 종목수 | 하루최대 | 연일제한 | 시가상승제한 | 갭상한 | 갭하한 | 메인 랭킹 | 보조 랭킹 |")
+            lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+            
+            rank_map = {
+                "1": "상승률", "2": "하락률", "3": "거래량", "4": "거래대금", "5": "TICK횟수"
+            }
+            
+            for c in configs:
+                cfg = c.config_json
+                univ_raw = cfg.get('target_universe', '-')
+                univ = "N225" if univ_raw == "nikkei225" else "JPX400" if univ_raw == "nikkei400" else univ_raw
+                start = cfg.get('start_time', '-')
+                end = cfg.get('end_time', '-')
+                max_conc = cfg.get('max_concurrent_stocks', '-')
+                max_daily = cfg.get('daily_max_trades', '-')
+                cooldown = cfg.get('recent_trade_cooldown_days', '-')
+                max_open = cfg.get('max_rise_from_open_pct', '-')
+                gap_max = cfg.get('gap_filter_max', '-')
+                gap_min = cfg.get('gap_filter_min', '-')
+                
+                r1_val = str(cfg.get('ranking_type', '-'))
+                rank1 = rank_map.get(r1_val, r1_val)
+                r2_val = str(cfg.get('secondary_ranking_type', '-'))
+                rank2 = rank_map.get(r2_val, r2_val)
+                
+                lines.append(f"| {c.name} | {univ} | {start} | {end} | {max_conc} | {max_daily} | {cooldown} | {max_open}% | {gap_max}% | {gap_min}% | {rank1} | {rank2} |")
+            
+            lines.append("")
+            lines.append("### VWAP 매매 전략 개별 설정")
+            lines.append("")
+            vwap_configs = [c for c in configs if c.config_json.get('extraction_strategy') == 'VWAPPullback']
+            if vwap_configs:
+                lines.append("| 전략 이름 | 상단 밴드 | 하단 밴드 | 최소 V자 회복 | 최소 절대 반등 | 반등 안착 | 최대 고점하락 | 심층 붕괴 한계 |")
+                lines.append("|---|---|---|---|---|---|---|---|")
+                for c in vwap_configs:
+                    cfg = c.config_json
+                    vu = cfg.get('vwap_upper_band', '-')
+                    vl = cfg.get('vwap_lower_band', '-')
+                    vbr = cfg.get('vwap_bounce_ratio', '-')
+                    abr = cfg.get('vwap_absolute_min_bounce_pct', '-')
+                    vw = cfg.get('vwap_bounce_wait_minutes', '-')
+                    mp = cfg.get('max_pullback_pct', '-')
+                    dbl = cfg.get('vwap_breakdown_limit_pct', '-')
+                    lines.append(f"| {c.name} | {vu}% | {vl}% | {vbr}% | {abr}% | {vw}분 | {mp}% | {dbl}% |")
+                lines.append("")
+            else:
+                lines.append("_활성화된 VWAP 전략 없음_")
+                lines.append("")
+        else:
+            lines.append("_활성화된 전략 없음_")
             lines.append("")
 
         # === Footer ===

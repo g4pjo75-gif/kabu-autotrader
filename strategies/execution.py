@@ -840,14 +840,11 @@ class DynamicLossCutManager(BaseExecutionStrategy):
             
         pnl_percent = (current_price - entry_price) / entry_price * 100
         
-        # Calculate dynamic stop loss percentage based on holding time
+        # Calculate holding time for time stop
         entry_time = current_position.get("entry_time")
+        hold_minutes = 0.0
         
-        if not entry_time:
-            # Fallback to base static stop loss if entry_time is missing
-            lc_pct = base_lc
-            hold_minutes = 0.0
-        else:
+        if entry_time:
             if isinstance(entry_time, str):
                 try:
                     entry_time = datetime.fromisoformat(entry_time)
@@ -858,20 +855,9 @@ class DynamicLossCutManager(BaseExecutionStrategy):
                 hold_seconds = (datetime.now() - entry_time).total_seconds()
                 hold_minutes = hold_seconds / 60
                 
-                # Apply step-wise tightening
-                if hold_minutes < 15:
-                    lc_pct = base_lc
-                elif hold_minutes < 30:
-                    lc_pct = base_lc * 0.8  # 80% of base stop loss (e.g. 2.5% -> 2.0%)
-                elif hold_minutes < 60:
-                    lc_pct = base_lc * 0.6  # 60% of base stop loss (e.g. 2.5% -> 1.5%)
-                else:
-                    lc_pct = base_lc * 0.4  # 40% of base stop loss (e.g. 2.5% -> 1.0%)
-            else:
-                lc_pct = base_lc
-                hold_minutes = 0.0
+        lc_pct = base_lc
 
-        # 1. Check Dynamic Stop Loss
+        # 1. Check Stop Loss (Static percentage, no dynamic tightening)
         if pnl_percent <= -lc_pct:
             return {
                 "symbol": symbol,
@@ -879,7 +865,7 @@ class DynamicLossCutManager(BaseExecutionStrategy):
                 "qty": qty,
                 "price": current_price,
                 "order_type": "market",
-                "reason": f"Dynamic Loss cut at {pnl_percent:.2f}% (Limit: -{lc_pct:.2f}%, Held: {hold_minutes:.1f}m)",
+                "reason": f"Loss cut at {pnl_percent:.2f}% (Limit: -{lc_pct:.2f}%)",
             }
 
         # 2. Check Time Stop Exit (e.g. held for >60 mins and return is flat/losing (< +0.2%))

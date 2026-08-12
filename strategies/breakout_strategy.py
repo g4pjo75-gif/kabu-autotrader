@@ -55,6 +55,16 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
                 "float", 25.0, 5.0, 30.0,
                 description="시가 대비 이 비율 초과 폭등 시 추격 매수 금지 (상한가 추격 방지)"
             ),
+            StrategyParameter(
+                "max_drawdown_limit_pct", "당일 고가 대비 최대 허용 낙폭 (%)",
+                "float", 3.0, 0.5, 10.0,
+                description="당일 고가 대비 이 비율 이상 크게 하락했던 종목은 돌파하더라도 가짜 돌파로 간주하여 매수 금지"
+            ),
+            StrategyParameter(
+                "morning_wait_minutes", "장 시작 후 매수 보류 시간 (분)",
+                "int", 30, 0, 120,
+                description="개장 직후 이 시간 동안은 고가 돌파 매수를 하지 않고 관망하여 진짜 당일 고가를 탐색"
+            ),
         ]
 
     async def evaluate(self, symbol: str, data: pd.DataFrame) -> SignalResult:
@@ -101,6 +111,7 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
         day_high: float,
         cumulative_volume: int,
         market_trend: str = "Neutral",
+        pullback_low: float = 0.0,
     ) -> SignalResult:
         """
         실시간 Board 데이터 기반 고가 돌파 평가.
@@ -114,6 +125,7 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
             day_high: 당일 최고가 (갱신 전 기준)
             cumulative_volume: 당일 누적 거래량
             market_trend: 시장 지수 트렌드
+            pullback_low: 고점 형성 이후 최저가 (낙폭 계산용)
         """
         if current_price <= 0 or open_price <= 0 or cumulative_volume <= 0:
             return SignalResult(symbol=symbol, signal=False, score=0.0,
@@ -122,6 +134,23 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
         margin_pct = self.get_param("breakout_margin_pct") / 100
         spurt_ratio = self.get_param("volume_spurt_ratio")
         max_rise_pct = self.get_param("max_daily_rise_pct")
+        max_drawdown_pct = self.get_param("max_drawdown_limit_pct")
+        morning_wait_minutes = self.get_param("morning_wait_minutes")
+        
+        # ── 0. 아침 관망 시간 필터 ──
+        import datetime
+        now = datetime.datetime.now()
+        market_open = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        minutes_since_open = (now - market_open).total_seconds() / 60.0
+        
+        if morning_wait_minutes > 0 and 0 <= minutes_since_open < morning_wait_minutes:
+            return SignalResult(
+                symbol=symbol, signal=False, score=0.0,
+                details={
+                    "reason": "morning_wait", 
+                    "msg": f"개장 후 {morning_wait_minutes}분 관망 중 ({minutes_since_open:.0f}분 경과)"
+                }
+            )
         
         # ── 1. 거래량 증가폭(Delta) 계산 ──
         last_vol = self._last_volumes[symbol]
@@ -166,12 +195,22 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
         rise_pct = (current_price - open_price) / open_price * 100
         not_too_high = rise_pct <= max_rise_pct
         
-        # ── 6. 시장 지수 필터 ──
+        # ── 6. 고가 대비 심층 붕괴(Drawdown) 방어 ──
+        # 고점 형성 이후 한 번이라도 -N% 이상 크게 무너진 적이 있다면
+        # 현재 반등하여 고가를 돌파하더라도 가짜 돌파(데드캣 바운스)로 간주
+        drawdown_ok = True
+        actual_drawdown = 0.0
+        if day_high > 0 and pullback_low > 0 and day_high > pullback_low:
+            actual_drawdown = (day_high - pullback_low) / day_high * 100.0
+            if actual_drawdown >= max_drawdown_pct:
+                drawdown_ok = False
+        
+        # ── 7. 시장 지수 필터 ──
         market_ok = market_trend != "Down"
         
         # ── 최종 매수 승인 판단 ──
-        # 돌파 + 거래량 급증 + 상승폭 안전 + 지수 안정
-        signal = breakout_ok and volume_ok and not_too_high and market_ok
+        # 돌파 + 거래량 급증 + 상승폭 안전 + 심층 붕괴 없음 + 지수 안정
+        signal = breakout_ok and volume_ok and not_too_high and drawdown_ok and market_ok
         
         score = 0.0
         if signal:
@@ -189,9 +228,11 @@ class HighBreakoutStrategy(BaseExtractionStrategy):
                 "rise_pct": f"{rise_pct:.2f}%",
                 "vol_delta": vol_delta,
                 "avg_delta": round(avg_delta, 1),
+                "drawdown": f"-{actual_drawdown:.1f}%",
                 "breakout_ok": breakout_ok,
                 "volume_spurt": volume_ok,
                 "not_too_high": not_too_high,
+                "drawdown_ok": drawdown_ok,
                 "market_ok": market_ok,
                 "mode": "realtime"
             }

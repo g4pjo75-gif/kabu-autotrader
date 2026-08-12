@@ -484,6 +484,7 @@ class AutomationService:
         # Use the calculated to_extract_count instead of fixed max_stocks
         max_stocks = to_extract_count 
         max_buy_price = float(self.app_state.get("max_buy_price", 5000))
+        min_buy_price = float(self.app_state.get("min_buy_price", 300))
         max_retries = 1  # Default for ranking_leaders
         
         self._log_to_dashboard(f"[{strategy_name}] Analyzing {universe_code} with {extraction_strategy}...", "INFO")
@@ -524,11 +525,20 @@ class AutomationService:
             gap_max = float(config.get("gap_filter_max", 5.0))
             ranking_type = config.get("ranking_type", "1")  # 기본: 상승률
             secondary_ranking_type = config.get("secondary_ranking_type", "5")  # 기본: TICK 횟수
+            start_rank = config.get("ranking_start_rank", 1) # 시작 순위
             max_rise_from_open = float(config.get("max_rise_from_open_pct", 2.5))  # 시가 대비 최대 상승률
+            min_turnover_mil = float(config.get("min_turnover_mil", 500.0))  # 최소 거래대금 (백만엔)
+            
+            # [안전장치] UI 설정 누락/오류로 인해 0이 들어와 잡주 필터가 무력화되는 것을 방지
+            # 단타 매매 시 최소 1억 엔(100) 하한선을 강제 적용
+            if min_turnover_mil < 100.0:
+                logger.warning(f"[Automation] 설정된 거래대금 하한({min_turnover_mil})이 너무 낮아 강제로 100.0으로 조정합니다.")
+                min_turnover_mil = 100.0
             
             sec_log = f" + 보조({secondary_ranking_type})" if secondary_ranking_type != "none" else ""
+            start_log = f" (순위 {start_rank}위부터)" if start_rank > 1 else ""
             self._log_to_dashboard(
-                f"[{strategy_name}] 랭킹 API (Type={ranking_type}{sec_log}) 주도주 추출 중... "
+                f"[{strategy_name}] 랭킹 API (Type={ranking_type}{sec_log}){start_log} 주도주 추출 중... "
                 f"(갭 필터: +{gap_min}% ~ +{gap_max}%, 시가 상승 한도: +{max_rise_from_open}%)", "INFO"
             )
             
@@ -543,6 +553,8 @@ class AutomationService:
                     gap_max=gap_max,
                     max_rise_from_open_pct=max_rise_from_open,
                     max_buy_price=max_buy_price,
+                    start_rank=start_rank,
+                    min_turnover_mil=min_turnover_mil,
                 )
                 
                 if leaders:
@@ -570,56 +582,62 @@ class AutomationService:
                                     log_e["filter_detail"] = f"현재가 ¥{price:,.0f} >= 상한 ¥{max_buy_price:,.0f}"
                             continue
                         
+                        if price <= min_buy_price:
+                            # 로그에도 저가제외 표시
+                            for log_e in full_log:
+                                if log_e["symbol"] == symbol:
+                                    log_e["filter_result"] = "저가제외"
+                                    log_e["filter_detail"] = f"현재가 ¥{price:,.0f} <= 하한 ¥{min_buy_price:,.0f}"
+                            continue
+                        
                         # --- 복합 점수 산출 ---
                         gap = leader.get("gap_pct", 0)
                         volume = leader.get("volume", 0)
                         open_price = 0
+                        ranking_pos = 50
                         prev_close = leader.get("previous_close", 0)
                         
-                        # 해당 종목의 시가 정보를 full_log에서 가져옴
+                        # 해당 종목의 시가 정보와 랭킹 순위를 full_log에서 가져옴
                         for log_e in full_log:
                             if log_e["symbol"] == symbol:
                                 open_price = log_e.get("open_price", 0)
+                                ranking_pos = log_e.get("ranking_position", 50)
                                 break
                         
-                        # 1. 갭 점수 (30점 만점): 적정 갭(3~4%)이 최고, 너무 낮거나 높으면 감점
-                        ideal_gap = (gap_min + gap_max) / 2
-                        gap_deviation = abs(gap - ideal_gap)
-                        gap_range = (gap_max - gap_min) / 2
-                        gap_score = max(0, 30.0 * (1 - gap_deviation / gap_range)) if gap_range > 0 else 15.0
+                        # 1. API 원본 랭킹 점수 (40점 만점): 증권사 API의 순위를 최우선 반영
+                        # 1위=40점, 51위=0점 (순위당 0.8점 감점)
+                        rank_score = max(0.0, 40.0 - (ranking_pos - 1) * 0.8)
                         
-                        # 2. 거래량 점수 (30점 만점): 거래량이 높을수록 유동성 좋음
-                        # 상대 비교: 현재 리스트 내 최대 거래량 기준
-                        max_vol = max(l.get("volume", 1) for l in leaders) or 1
-                        vol_ratio = volume / max_vol
-                        vol_score = min(30.0, 30.0 * vol_ratio)
+                        # 2. 거래대금 점수 (30점 만점): 절대적 거래대금 기준 (돈이 몰리는 곳)
+                        # 50억엔(5,000,000,000엔) 이상이면 30점 만점
+                        turnover = volume * price
+                        turnover_score = min(30.0, (turnover / 5_000_000_000) * 30.0)
                         
                         # 3. 시가 대비 상승 모멘텀 점수 (20점 만점)
                         if open_price > 0 and price > 0:
                             rise_from_open = ((price - open_price) / open_price) * 100
-                            # 시가 대비 0.5~1.5% 상승이 이상적 (상승 모멘텀 + 과열 아님)
-                            if 0 <= rise_from_open <= max_rise_from_open:
-                                momentum_score = 20.0 * min(1.0, rise_from_open / 1.0) if rise_from_open <= 1.5 else 20.0 * (1 - (rise_from_open - 1.5) / (max_rise_from_open - 1.5))
-                                momentum_score = max(0, momentum_score)
+                            # 시가 대비 1.5% 이상 상승 중이면 만점, 이하면 비율별 점수 부여 (음수면 0점)
+                            if rise_from_open >= 1.5:
+                                momentum_score = 20.0
+                            elif rise_from_open > 0:
+                                momentum_score = 20.0 * (rise_from_open / 1.5)
                             else:
-                                momentum_score = 0
+                                momentum_score = 0.0
                         else:
                             momentum_score = 10.0  # 시가 정보 없으면 중간값
                         
-                        # 4. 가격대 점수 (20점 만점): 단타에 적합한 가격대 보너스
-                        if 300 <= price <= 2000:
-                            price_score = 20.0  # 최적 가격대
-                        elif 2000 < price <= 3500:
-                            price_score = 15.0
-                        elif price < 300:
-                            price_score = 10.0  # 너무 저가
-                        else:
-                            price_score = 8.0   # 고가
+                        # 4. 갭(Gap) 점수 (10점 만점): 갭 필터를 이미 통과했으므로 기본 보너스
+                        # 너무 과도한 갭은 감점 (gap_max 근처)
+                        ideal_gap = (gap_min + gap_max) / 2
+                        gap_deviation = abs(gap - ideal_gap)
+                        gap_range = (gap_max - gap_min) / 2
+                        gap_score = max(0, 10.0 * (1 - gap_deviation / gap_range)) if gap_range > 0 else 5.0
                         
-                        composite_score = gap_score + vol_score + momentum_score + price_score
+                        composite_score = rank_score + turnover_score + momentum_score + gap_score
                         score_reason = (
-                            f"갭{gap_score:.0f} + 거래량{vol_score:.0f} + "
-                            f"모멘텀{momentum_score:.0f} + 가격대{price_score:.0f} = {composite_score:.1f}"
+                            f"순위({ranking_pos}위){rank_score:.0f} + "
+                            f"대금({turnover/1_000_000_000:.1f}B){turnover_score:.0f} + "
+                            f"모멘텀{momentum_score:.0f} + 갭{gap_score:.0f} = {composite_score:.1f}"
                         )
                         
                         scored_leaders.append({
@@ -706,14 +724,15 @@ class AutomationService:
                 try:
                     results = await analysis_service.analyze_universe(
                         universe_code=universe_code,
-                        strategy_name=extraction_strategy
+                        strategy_name=extraction_strategy,
+                        params=config
                     )
                     
                     # Filter out stocks above max buy price and already traded today
                     before_filter = len(results)
                     results = [
                         r for r in results 
-                        if r.get("price", 0) < max_buy_price and r.get("symbol") not in already_traded_symbols
+                        if min_buy_price < r.get("price", 0) < max_buy_price and r.get("symbol") not in already_traded_symbols
                     ]
                     filtered_count = before_filter - len(results)
                     
@@ -736,30 +755,31 @@ class AutomationService:
                     self._log_to_dashboard(f"[{strategy_name}] {retry_delay}초 후 데이터 재수집 및 분석을 재시도합니다...", "WARNING")
                     await asyncio.sleep(retry_delay)
 
-            self._log_to_dashboard(f"[{strategy_name}] ❌ {max_retries}회 재시도에도 불구하고 최종 대상을 찾지 못했습니다.", "WARNING")
-            
-            # --- Save dummy candidate for NO TARGETS or FAILURE ---
-            dummy = AnalysisCandidate(
-                id=None,
-                date=datetime.now().strftime("%Y-%m-%d"),
-                extraction_strategy=strategy_name,
-                target_universe=universe_code,
-                rank=1,
-                symbol="-",
-                symbol_name="",
-                score=0.0,
-                price=0.0,
-                status="SKIPPED",
-                skip_reason=f"매수 후보 미발견 또는 실행/데이터 오류 ({max_retries}회 재시도 실패)",
-                actual_strategy=""
-            )
-            try:
-                self.db.save_analysis_candidates([dummy])
-            except Exception as e:
-                logger.error(f"[Automation] Failed to save no-target dummy candidate: {e}")
+            if not targets:
+                self._log_to_dashboard(f"[{strategy_name}] ❌ {max_retries}회 재시도에도 불구하고 최종 대상을 찾지 못했습니다.", "WARNING")
                 
-            logger.info(f"========== [Automation] END ROUTINE: {strategy_name} (NO TARGETS) ==========")
-            return
+                # --- Save dummy candidate for NO TARGETS or FAILURE ---
+                dummy = AnalysisCandidate(
+                    id=None,
+                    date=datetime.now().strftime("%Y-%m-%d"),
+                    extraction_strategy=strategy_name,
+                    target_universe=universe_code,
+                    rank=1,
+                    symbol="-",
+                    symbol_name="",
+                    score=0.0,
+                    price=0.0,
+                    status="SKIPPED",
+                    skip_reason=f"매수 후보 미발견 또는 실행/데이터 오류 ({max_retries}회 재시도 실패)",
+                    actual_strategy=""
+                )
+                try:
+                    self.db.save_analysis_candidates([dummy])
+                except Exception as e:
+                    logger.error(f"[Automation] Failed to save no-target dummy candidate: {e}")
+                    
+                logger.info(f"========== [Automation] END ROUTINE: {strategy_name} (NO TARGETS) ==========")
+                return
         
         # 3. Filter targets: Remove symbols already in strategy_targets to prevent duplicates
         existing_symbols = {t["symbol"] for t in strategy_targets}

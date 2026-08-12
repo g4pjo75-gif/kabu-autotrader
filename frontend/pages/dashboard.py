@@ -70,19 +70,20 @@ async def dashboard_page(app_state: Dict[str, Any]) -> None:
             ui.separator().classes("mb-4")
             history_container = ui.column().classes("w-full max-h-60 overflow-y-auto")
 
-        # Active Orders
-        with ui.card().classes("bg-gray-800 rounded-lg p-6 w-full"):
-            with ui.row().classes("items-center justify-between mb-4"):
-                with ui.row().classes("items-center"):
-                    ui.icon("pending_actions").classes("text-yellow-400 mr-2")
-                    ui.label("미체결 주문").classes("text-lg font-semibold text-white")
+        # Active Orders (미체결 주문 - 사용자 요청으로 숨김 처리)
+        if False:
+            with ui.card().classes("bg-gray-800 rounded-lg p-6 w-full"):
+                with ui.row().classes("items-center justify-between mb-4"):
+                    with ui.row().classes("items-center"):
+                        ui.icon("pending_actions").classes("text-yellow-400 mr-2")
+                        ui.label("미체결 주문").classes("text-lg font-semibold text-white")
+                    
+                    with ui.row().classes("gap-2 items-center"):
+                        orders_badge = ui.badge("0건").classes("bg-yellow-600")
+                        ui.button(icon="refresh", on_click=lambda: update_orders()).props("flat round dense").classes("text-gray-400")
                 
-                with ui.row().classes("gap-2 items-center"):
-                    orders_badge = ui.badge("0건").classes("bg-yellow-600")
-                    ui.button(icon="refresh", on_click=lambda: update_orders()).props("flat round dense").classes("text-gray-400")
-            
-            ui.separator().classes("mb-4")
-            orders_container = ui.column().classes("w-full")
+                ui.separator().classes("mb-4")
+                orders_container = ui.column().classes("w-full")
 
         # Live Logs (Auto-refresh)
         with ui.card().classes("bg-gray-800 rounded-lg p-6 w-full"):
@@ -538,7 +539,7 @@ async def dashboard_page(app_state: Dict[str, Any]) -> None:
         await update_summary()
         await update_positions()
         update_history()
-        update_orders()
+        # update_orders() # Disabled since UI is hidden
         update_daily_summary()
         update_date_details()
         # Logs updated separately

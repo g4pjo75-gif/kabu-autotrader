@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # === Logging Configuration ===
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -29,7 +29,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        RotatingFileHandler(LOG_FILE, maxBytes=10*1024*1024, backupCount=5, encoding="utf-8")
+        TimedRotatingFileHandler(LOG_FILE, when="midnight", interval=1, backupCount=30, encoding="utf-8")
     ]
 )
 logger = logging.getLogger("Antigravity")
@@ -77,6 +77,7 @@ def init_services():
     app_state["trailing_stop_pct"] = float(database.get_setting("trailing_stop_pct") or "3.0")
     app_state["max_trades_per_symbol"] = int(database.get_setting("max_trades_per_symbol") or "1")
     app_state["max_buy_price"] = float(database.get_setting("max_buy_price") or "5000")
+    app_state["min_buy_price"] = float(database.get_setting("min_buy_price") or "300")
     app_state["dip_buy_pct"] = float(database.get_setting("dip_buy_pct") or "1.5")
     
     # Live Trading Safety
@@ -88,10 +89,12 @@ def init_services():
     app_state["global_nikkei_gap_threshold"] = float(database.get_setting("global_nikkei_gap_threshold") or "1.0")
     
     # VWAP Strategy Settings
-    app_state["vwap_upper_band"] = float(database.get_setting("vwap_upper_band") or "0.5")
-    app_state["vwap_lower_band"] = float(database.get_setting("vwap_lower_band") or "0.2")
-    app_state["vwap_min_bounce"] = float(database.get_setting("vwap_min_bounce") or "0.2")
-    app_state["max_pullback_pct"] = float(database.get_setting("max_pullback_pct") or "1.5")
+    app_state["vwap_upper_band"] = float(database.get_setting("vwap_upper_band") or "1.5")
+    app_state["vwap_lower_band"] = float(database.get_setting("vwap_lower_band") or "1.5")
+    app_state["vwap_bounce_ratio"] = float(database.get_setting("vwap_bounce_ratio") or "30.0")
+    app_state["min_pullback_pct"] = float(database.get_setting("min_pullback_pct") or "1.5")
+    app_state["max_pullback_pct"] = float(database.get_setting("max_pullback_pct") or "5.0")
+    app_state["spike_threshold_pct"] = float(database.get_setting("spike_threshold_pct") or "1.5")
     
     # High Breakout Strategy Settings
     app_state["breakout_margin_pct"] = float(database.get_setting("breakout_margin_pct") or "0.1")
@@ -100,6 +103,13 @@ def init_services():
     
     # Target Waiting Timeout
     app_state["target_timeout_minutes"] = float(database.get_setting("target_timeout_minutes") or "60")
+    
+    # Time Stop (forced exit after N minutes if profit < 0.2%)
+    app_state["time_stop_minutes"] = int(database.get_setting("time_stop_minutes") or "60")
+    
+    # Hybrid Order Settings (指値 → 成行 自動切替)
+    app_state["hybrid_buy_timeout_sec"] = int(database.get_setting("hybrid_buy_timeout_sec") or "300")
+    app_state["hybrid_sell_timeout_sec"] = int(database.get_setting("hybrid_sell_timeout_sec") or "60")
     
     # Stepped Trailing Stop Settings
     app_state["stepped_trailing_enabled"] = (database.get_setting("stepped_trailing_enabled") or "true").lower() == "true"

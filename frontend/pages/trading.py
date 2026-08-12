@@ -116,11 +116,10 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                     "연속 거래 제한 (일)", value=2, min=0, max=10
                 ).props("filled dark").tooltip("최근 N일 이내 매수 종목 재진입 방지 (0=미사용)")
             
-            # 2.5 랭킹 전용 설정 (ranking_leaders 선택 시에만 표시)
-            ranking_settings_container = ui.column().classes("w-full gap-3 mt-2")
-            
-            with ranking_settings_container:
-                ui.label("📊 랭킹 추출 설정").classes("text-amber-300 font-semibold")
+            # 2.5 랭킹 전용 설정
+            ranking_api_container = ui.column().classes("w-full gap-3 mt-2")
+            with ranking_api_container:
+                ui.label("📊 랭킹 API 설정").classes("text-amber-300 font-semibold")
                 
                 with ui.row().classes("gap-4"):
                     ranking_type_select = ui.select(
@@ -147,7 +146,19 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                         value="5",
                         label="보조 랭킹 (옵션)"
                     ).props("filled dark").classes("w-40").tooltip("선택 시 메인 랭킹과 보조 랭킹 모두에 포함된 종목만 추출합니다.")
-                
+                    
+                    ranking_start_rank_input = ui.number(
+                        "랭킹 시작 순위", value=1, min=1, max=100
+                    ).props("filled dark").classes("w-32").tooltip("API 결과에서 이 순위부터 대상을 가져옵니다. (예: 20 입력 시 1~19위 제외)")
+                    
+                    min_turnover_mil_input = ui.number(
+                        "최소 거래대금 (백만엔)", value=500, step=50, min=10
+                    ).props("filled dark suffix=백만").classes("w-48").tooltip("이 거래대금에 미달하는 잡주는 제외 (500백만엔 = 약 50억원)")
+                    
+            # 2.6 갭/상승률 필터 설정
+            gap_filter_container = ui.column().classes("w-full gap-3 mt-2")
+            with gap_filter_container:
+                ui.label("🎯 당일 시가/갭 필터 설정").classes("text-amber-300 font-semibold")
                 with ui.row().classes("gap-4 items-end"):
                     gap_min_input = ui.number(
                         "갭상승률 하한 (%)", value=2.0, step=0.5, min=0.0, max=10.0
@@ -159,11 +170,38 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                         "시가 대비 최대 상승률 (%)", value=2.5, step=0.5, min=0.5, max=10.0
                     ).props("filled dark suffix=%").classes("w-48").tooltip("스파이크 꼭대기 추격 매수 방지 (이 수치 초과 상승 시 진입 제외)")
             
-            # ranking_leaders 선택 시에만 표시
-            ranking_settings_container.bind_visibility_from(
-                universe_select, "value",
-                backward=lambda v: v == "ranking_leaders"
-            )
+
+            # 2.7 VWAP 설정 (VWAPPullback 전용)
+            vwap_config_container = ui.column().classes("w-full gap-3 mt-2")
+            with vwap_config_container:
+                ui.label("📈 VWAP 전략 설정").classes("text-amber-300 font-semibold")
+                
+                with ui.row().classes("gap-4 items-end"):
+                    st_vwap_upper = ui.number("상단 밴드 (%)", value=1.5, step=0.1, min=0.1, max=5.0).props("filled dark suffix=%").classes("w-32")
+                    st_vwap_lower = ui.number("하단 밴드 (%)", value=1.5, step=0.1, min=0.0, max=5.0).props("filled dark suffix=%").classes("w-32")
+                    st_vwap_bounce = ui.number("최소 V자 회복률(%)", value=20.0, step=1, min=1, max=100).props("filled dark suffix=%").classes("w-36")
+                    st_vwap_wait = ui.number("반등 안착(분)", value=2.0, step=0.5, min=0.0, max=10.0).props("filled dark suffix=분").classes("w-32")
+                
+                with ui.row().classes("gap-4 items-end"):
+                    st_min_pullback = ui.number("최소 고점하락(%)", value=1.2, step=0.1, min=0.1, max=10.0).props("filled dark suffix=%").classes("w-32")
+                    st_max_pullback = ui.number("최대 고점하락(%)", value=5.0, step=0.1, min=0.5, max=20.0).props("filled dark suffix=%").classes("w-32")
+                    st_abs_bounce = ui.number("최소 절대 반등(%)", value=1.0, step=0.1, min=0.1, max=5.0).props("filled dark suffix=%").classes("w-36").tooltip("고점 하락폭과 무관하게 이 % 이상 반등해야 찐반등 인정 (대장주 0.8, 중소형주 1.5 권장)")
+                    st_deep_break = ui.number("심층 붕괴 한계(%)", value=1.0, step=0.1, min=0.1, max=5.0).props("filled dark suffix=%").classes("w-36").tooltip("VWAP 대비 이 % 이상 하락 시 VWAP이 강력한 저항선으로 변질됐다고 판단하여 매수 금지")
+
+            # Visibility logic
+            def update_visibility(e=None):
+                is_ranking = universe_select.value == "ranking_leaders"
+                is_vwap = extract_select.value == "VWAPPullback"
+                
+                ranking_api_container.set_visibility(is_ranking)
+                gap_filter_container.set_visibility(True)
+                vwap_config_container.set_visibility(is_vwap)
+                
+            universe_select.on_value_change(update_visibility)
+            extract_select.on_value_change(update_visibility)
+            
+            # 초기 상태 적용
+            update_visibility()
 
             # 3. Time & Condition
             ui.label("3. 시간 및 조건").classes("text-indigo-300 font-semibold mt-2")
@@ -223,11 +261,25 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                 if universe_select.value == "ranking_leaders":
                     config_data["ranking_type"] = ranking_type_select.value
                     config_data["secondary_ranking_type"] = ranking_type2_select.value
-                    config_data["gap_filter_min"] = float(gap_min_input.value)
-                    config_data["gap_filter_max"] = float(gap_max_input.value)
-                    config_data["max_rise_from_open_pct"] = float(max_rise_input.value)
-                    # 사용자가 선택한 추출 전략을 그대로 사용 (VWAPPullback, HighBreakoutStrategy 등)
+                    config_data["ranking_start_rank"] = int(ranking_start_rank_input.value)
+                    config_data["min_turnover_mil"] = float(min_turnover_mil_input.value)
                 
+                # 갭/상승률 필터는 항상 저장
+                config_data["gap_filter_min"] = float(gap_min_input.value)
+                config_data["gap_filter_max"] = float(gap_max_input.value)
+                config_data["max_rise_from_open_pct"] = float(max_rise_input.value)
+                
+                # VWAP 전용 설정 추가
+                if extract_select.value == "VWAPPullback":
+                    config_data["vwap_upper_band"] = float(st_vwap_upper.value)
+                    config_data["vwap_lower_band"] = float(st_vwap_lower.value)
+                    config_data["vwap_bounce_ratio"] = float(st_vwap_bounce.value)
+                    config_data["vwap_bounce_wait_minutes"] = float(st_vwap_wait.value)
+                    config_data["min_pullback_pct"] = float(st_min_pullback.value)
+                    config_data["max_pullback_pct"] = float(st_max_pullback.value)
+                    config_data["vwap_absolute_min_bounce_pct"] = float(st_abs_bounce.value)
+                    config_data["vwap_breakdown_limit_pct"] = float(st_deep_break.value)
+                    
                 if automation_service:
                     automation_service.save_config(
                         name=name,
@@ -267,6 +319,17 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
         gap_min_input.value = 2.0
         gap_max_input.value = 5.0
         max_rise_input.value = 2.5
+        min_turnover_mil_input.value = 500.0
+        
+        st_vwap_upper.value = 1.5
+        st_vwap_lower.value = 1.5
+        st_vwap_bounce.value = 20.0
+        st_vwap_wait.value = 2.0
+        st_min_pullback.value = 1.2
+        st_max_pullback.value = 5.0
+        st_abs_bounce.value = 0.8
+        st_deep_break.value = 1.0
+        
         strategy_dialog.open()
     
     def open_edit_strategy_dialog(config_id: int):
@@ -294,12 +357,24 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
         nikkei_gap_threshold_input.value = cfg.get("nikkei_gap_threshold", 1.5)
         ext_end_time_input.value = cfg.get("extraction_end_time", "11:00")
         ext_interval_input.value = cfg.get("extraction_interval", 120)
-        # 랭킹 전용 설정 복원
+        # 랭킹 설정 값 로드
         ranking_type_select.value = cfg.get("ranking_type", "5")
         ranking_type2_select.value = cfg.get("secondary_ranking_type", "none")
+        ranking_start_rank_input.value = cfg.get("ranking_start_rank", 1)
+        min_turnover_mil_input.value = cfg.get("min_turnover_mil", 500.0)
         gap_min_input.value = cfg.get("gap_filter_min", 2.0)
         gap_max_input.value = cfg.get("gap_filter_max", 5.0)
         max_rise_input.value = cfg.get("max_rise_from_open_pct", 2.5)
+        
+        st_vwap_upper.value = cfg.get("vwap_upper_band", 1.5)
+        st_vwap_lower.value = cfg.get("vwap_lower_band", 1.5)
+        st_vwap_bounce.value = cfg.get("vwap_bounce_ratio", 20.0)
+        st_vwap_wait.value = cfg.get("vwap_bounce_wait_minutes", 2.0)
+        st_min_pullback.value = cfg.get("min_pullback_pct", 1.2)
+        st_max_pullback.value = cfg.get("max_pullback_pct", 5.0)
+        st_abs_bounce.value = cfg.get("vwap_absolute_min_bounce_pct", 0.8)
+        st_deep_break.value = cfg.get("vwap_breakdown_limit_pct", 1.0)
+        
         strategy_dialog.open()
     
     # Dialog for Strategy Guide
@@ -394,17 +469,26 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
             ts_pct = app_state.get("trailing_stop_pct", 3.0)
             max_trades = app_state.get("max_trades_per_symbol", 1)
             max_buy_price = app_state.get("max_buy_price", 5000)
-            dip_buy = app_state.get("dip_buy_pct", 1.5)
             
             tp_input = ui.number("익절 % (+)", value=tp_pct, step=0.1, min=0.1).props("filled dark suffix=%").classes("w-32")
             lc_input = ui.number("손절 % (-)", value=lc_pct, step=0.1, min=0.1).props("filled dark suffix=%").classes("w-32")
             ts_input = ui.number("트레일링 스탑 % (-)", value=ts_pct, step=0.1, min=0.1).props("filled dark suffix=%").classes("w-32")
-            dip_input = ui.number("눌림목 매수 %", value=dip_buy, step=0.1, min=0.0, max=5.0).props("filled dark suffix=%").classes("w-32").tooltip("기준가 대비 N% 하락 시 매수 (0=즉시 매수)")
             max_trades_input = ui.number("당일 매수 제한 (종목당)", value=max_trades, step=1, min=1).props("filled dark suffix=회").classes("w-40")
             max_buy_price_input = ui.number("매수 상한가", value=max_buy_price, step=500, min=100).props("filled dark suffix=¥").classes("w-40")
             
+            min_buy_price = app_state.get("min_buy_price", 300)
+            min_buy_price_input = ui.number("매수 하한가", value=min_buy_price, step=50, min=0).props("filled dark suffix=¥").classes("w-40").tooltip("이 가격 이하 종목은 추출 리스트에서 제외 (저가 페니주 차단)")
+            
             target_timeout = app_state.get("target_timeout_minutes", 60)
             target_timeout_input = ui.number("대기 타임아웃", value=target_timeout, step=10, min=0, max=480).props("filled dark suffix=분").classes("w-32").tooltip("매수 조건 미충족 시 자동 제거 시간 (0=무제한 대기)")
+            
+            time_stop = app_state.get("time_stop_minutes", 60)
+            time_stop_input = ui.number("타임스탑", value=time_stop, step=10, min=10, max=300).props("filled dark suffix=분").classes("w-32").tooltip("매수 후 N분간 수익 +0.2% 미만 시 강제 매도 (VWAP 눌림목: 90~120분 권장)")
+
+            hybrid_buy_timeout = app_state.get("hybrid_buy_timeout_sec", 300)
+            hybrid_buy_input = ui.number("매수 지정가 대기", value=hybrid_buy_timeout, step=30, min=30, max=600).props("filled dark suffix=초").classes("w-36").tooltip("매수 시 지정가 체결 대기 시간. 미체결 시 성행(시장가)으로 전환")
+            hybrid_sell_timeout = app_state.get("hybrid_sell_timeout_sec", 60)
+            hybrid_sell_input = ui.number("매도 지정가 대기", value=hybrid_sell_timeout, step=10, min=10, max=300).props("filled dark suffix=초").classes("w-36").tooltip("매도 시 지정가 체결 대기 시간. 미체결 시 성행(시장가)으로 전환")
         
         # 단계별 트레일링 스톱 설정 섹션
         with ui.row().classes("w-full gap-4 items-end flex-wrap mt-2"):
@@ -423,21 +507,16 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
             st_step2_input = ui.number("2단계 강화 기준 %", value=st_step2, step=0.1, min=0.1).props("filled dark suffix=%").classes("w-40").tooltip("이 수익률 도달 시 트레일링 스톱 폭을 더 좁힘")
             st_step2_trail_input = ui.number("2단계 트레일링 %", value=st_step2_trail, step=0.1, min=0.1).props("filled dark suffix=%").classes("w-36").tooltip("2단계 도달 후 고점 대비 N% 하락 시 익절 매도")
             
-        # VWAP 전략 설정 섹션
+        # 일반 필터 설정 섹션
         with ui.row().classes("w-full gap-4 items-end flex-wrap mt-2"):
-            ui.icon("show_chart").classes("text-amber-400")
-            ui.label("VWAP 전략 설정").classes("text-amber-300 font-semibold mr-4")
+            ui.icon("filter_alt").classes("text-gray-400")
+            ui.label("일반 필터 설정").classes("text-gray-300 font-semibold mr-4")
             
-            vwap_upper = app_state.get("vwap_upper_band", 0.5)
-            vwap_lower = app_state.get("vwap_lower_band", 0.2)
-            vwap_bounce = app_state.get("vwap_min_bounce", 0.2)
+            spike_threshold = app_state.get("spike_threshold_pct", 1.5)
+            min_intraday_range = app_state.get("min_intraday_range_pct", 1.2)
             
-            vwap_upper_input = ui.number("VWAP 상단 밴드 (%)", value=vwap_upper, step=0.1, min=0.1, max=3.0).props("filled dark suffix=%").classes("w-32").tooltip("VWAP 위 이 범위 내에서 매수 허용")
-            vwap_lower_input = ui.number("VWAP 하단 밴드 (%)", value=vwap_lower, step=0.1, min=0.0, max=2.0).props("filled dark suffix=%").classes("w-32").tooltip("VWAP 아래 이 범위 내에서 매수 허용")
-            vwap_bounce_input = ui.number("최소 반등률 (%)", value=vwap_bounce, step=0.05, min=0.05, max=2.0).props("filled dark suffix=%").classes("w-32").tooltip("최근 저점 대비 이 이상 반등 시 진입")
-            
-            vwap_pullback = app_state.get("max_pullback_pct", 1.5)
-            vwap_pullback_input = ui.number("최대 고점하락 %", value=vwap_pullback, step=0.1, min=0.5, max=5.0).props("filled dark suffix=%").classes("w-32").tooltip("고점 대비 이 이상 하락 시 진입 제한")
+            spike_threshold_input = ui.number("스파이크 무시 기준 %", value=spike_threshold, step=0.1, min=0.1, max=3.0).props("filled dark suffix=%").classes("w-40").tooltip("1틱(5초) 내에 이 비율 이상 급변하면 15초간 휩쏘(스파이크)로 간주하고 진입 보류")
+            min_intraday_range_input = ui.number("최소 일중 변동폭 %", value=min_intraday_range, step=0.1, min=0.5, max=5.0).props("filled dark suffix=%").classes("w-40").tooltip("당일 고가와 저가의 폭이 이 비율 미만인 무거운 종목은 매수 거부")
             
         # 고가 돌파 전략 설정 섹션
         with ui.row().classes("w-full gap-4 items-end flex-wrap mt-2"):
@@ -447,10 +526,14 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
             breakout_margin = app_state.get("breakout_margin_pct", 0.1)
             volume_spurt = app_state.get("volume_spurt_ratio", 1.5)
             max_daily_rise = app_state.get("max_daily_rise_pct", 25.0)
+            max_drawdown = app_state.get("max_drawdown_limit_pct", 3.0)
+            morning_wait = app_state.get("morning_wait_minutes", 30)
             
             breakout_margin_input = ui.number("돌파 마진율 (%)", value=breakout_margin, step=0.05, min=0.0, max=2.0).props("filled dark suffix=%").classes("w-32").tooltip("당일 고가 대비 최소 이 비율 이상 돌파 시 진입 허용")
             volume_spurt_input = ui.number("거래량 급증 배수", value=volume_spurt, step=0.1, min=1.0, max=5.0).props("filled dark").classes("w-32").tooltip("최근 평균 대비 현재 거래량 변화 배수")
-            max_daily_rise_input = ui.number("당일 최대 상승률 (%)", value=max_daily_rise, step=1.0, min=5.0, max=30.0).props("filled dark suffix=%").classes("w-40").tooltip("시가 대비 이 비율 초과 폭등 시 추격 매수 금지 (상한가 추격 방지)")
+            max_daily_rise_input = ui.number("당일 최대 상승률 (%)", value=max_daily_rise, step=1.0, min=5.0, max=30.0).props("filled dark suffix=%").classes("w-40").tooltip("시가 대비 이 비율 초과 폭등 시 추격 매수 금지")
+            max_drawdown_input = ui.number("고가대비 최대 낙폭 (%)", value=max_drawdown, step=0.5, min=0.5, max=10.0).props("filled dark suffix=%").classes("w-48").tooltip("당일 고가 대비 이 비율 이상 크게 하락했던 종목은 가짜 돌파로 간주")
+            morning_wait_input = ui.number("아침 관망 시간 (분)", value=morning_wait, step=5, min=0, max=120).props("filled dark suffix=분").classes("w-40").tooltip("개장 직후 일정 시간 고가 돌파 매수 보류")
             
         # 시장 지수 필터 설정 섹션
         with ui.row().classes("w-full gap-4 items-end flex-wrap mt-2"):
@@ -471,25 +554,28 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                     db.set_setting("take_profit_pct", str(tp_input.value))
                     db.set_setting("loss_cut_pct", str(lc_input.value))
                     db.set_setting("trailing_stop_pct", str(ts_input.value))
-                    db.set_setting("dip_buy_pct", str(float(dip_input.value)))
                     db.set_setting("max_trades_per_symbol", str(int(max_trades_input.value)))
                     db.set_setting("max_buy_price", str(float(max_buy_price_input.value)))
+                    db.set_setting("min_buy_price", str(float(min_buy_price_input.value)))
                     db.set_setting("target_timeout_minutes", str(float(target_timeout_input.value)))
+                    db.set_setting("time_stop_minutes", str(int(time_stop_input.value)))
+                    # Hybrid Order settings
+                    db.set_setting("hybrid_buy_timeout_sec", str(int(hybrid_buy_input.value)))
+                    db.set_setting("hybrid_sell_timeout_sec", str(int(hybrid_sell_input.value)))
                     # Stepped Trailing Stop settings
                     db.set_setting("stepped_trailing_enabled", "true" if st_enabled_input.value else "false")
                     db.set_setting("stepped_trailing_activate_pct", str(float(st_activate_input.value)))
                     db.set_setting("stepped_trailing_step1_pct", str(float(st_step1_input.value)))
                     db.set_setting("stepped_trailing_step2_pct", str(float(st_step2_input.value)))
                     db.set_setting("stepped_trailing_step2_trail_pct", str(float(st_step2_trail_input.value)))
-                    # VWAP settings
-                    db.set_setting("vwap_upper_band", str(float(vwap_upper_input.value)))
-                    db.set_setting("vwap_lower_band", str(float(vwap_lower_input.value)))
-                    db.set_setting("vwap_min_bounce", str(float(vwap_bounce_input.value)))
-                    db.set_setting("max_pullback_pct", str(float(vwap_pullback_input.value)))
+                    db.set_setting("spike_threshold_pct", str(float(spike_threshold_input.value)))
+                    db.set_setting("min_intraday_range_pct", str(float(min_intraday_range_input.value)))
                     # High Breakout settings
                     db.set_setting("breakout_margin_pct", str(float(breakout_margin_input.value)))
                     db.set_setting("volume_spurt_ratio", str(float(volume_spurt_input.value)))
                     db.set_setting("max_daily_rise_pct", str(float(max_daily_rise_input.value)))
+                    db.set_setting("max_drawdown_limit_pct", str(float(max_drawdown_input.value)))
+                    db.set_setting("morning_wait_minutes", str(int(morning_wait_input.value)))
                     # Market settings
                     db.set_setting("market_index_down_threshold", str(float(n225_down_input.value)))
                     db.set_setting("market_index_up_threshold", str(float(n225_up_input.value)))
@@ -498,10 +584,14 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                     app_state["take_profit_pct"] = float(tp_input.value)
                     app_state["loss_cut_pct"] = float(lc_input.value)
                     app_state["trailing_stop_pct"] = float(ts_input.value)
-                    app_state["dip_buy_pct"] = float(dip_input.value)
                     app_state["max_trades_per_symbol"] = int(max_trades_input.value)
                     app_state["max_buy_price"] = float(max_buy_price_input.value)
+                    app_state["min_buy_price"] = float(min_buy_price_input.value)
                     app_state["target_timeout_minutes"] = float(target_timeout_input.value)
+                    app_state["time_stop_minutes"] = int(time_stop_input.value)
+                    # Hybrid Order settings
+                    app_state["hybrid_buy_timeout_sec"] = int(hybrid_buy_input.value)
+                    app_state["hybrid_sell_timeout_sec"] = int(hybrid_sell_input.value)
                     # Stepped Trailing Stop settings
                     app_state["stepped_trailing_enabled"] = st_enabled_input.value
                     app_state["stepped_trailing_activate_pct"] = float(st_activate_input.value)
@@ -509,14 +599,14 @@ async def trading_page(app_state: Dict[str, Any]) -> None:
                     app_state["stepped_trailing_step2_pct"] = float(st_step2_input.value)
                     app_state["stepped_trailing_step2_trail_pct"] = float(st_step2_trail_input.value)
                     # VWAP settings
-                    app_state["vwap_upper_band"] = float(vwap_upper_input.value)
-                    app_state["vwap_lower_band"] = float(vwap_lower_input.value)
-                    app_state["vwap_min_bounce"] = float(vwap_bounce_input.value)
-                    app_state["max_pullback_pct"] = float(vwap_pullback_input.value)
+                    app_state["spike_threshold_pct"] = float(spike_threshold_input.value)
+                    app_state["min_intraday_range_pct"] = float(min_intraday_range_input.value)
                     # High Breakout settings
                     app_state["breakout_margin_pct"] = float(breakout_margin_input.value)
                     app_state["volume_spurt_ratio"] = float(volume_spurt_input.value)
                     app_state["max_daily_rise_pct"] = float(max_daily_rise_input.value)
+                    app_state["max_drawdown_limit_pct"] = float(max_drawdown_input.value)
+                    app_state["morning_wait_minutes"] = int(morning_wait_input.value)
                     # Market Index settings
                     app_state["market_index_down_threshold"] = float(n225_down_input.value)
                     app_state["market_index_up_threshold"] = float(n225_up_input.value)

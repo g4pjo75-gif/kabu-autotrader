@@ -49,10 +49,12 @@ class VWAPState:
     day_low: float = float('inf')      # 당일 저가
     open_price: float = 0.0            # 당일 시가
     last_price: float = 0.0            # 최근 체결 가격
-    recent_low: float = float('inf')   # 최근 N틱 저점 (반등 감지용)
+    pullback_low: float = float('inf') # 고점 갱신 후 하락 시 진정한 최저점 추적
     recent_prices: List[float] = field(default_factory=list)  # 최근 가격 기록 (반등 패턴용)
     vwap_history: List[float] = field(default_factory=list)   # VWAP 히스토리 (기울기 계산용)
     tick_count: int = 0                                       # 당일 수신된 실시간 틱 카운트 (개수)
+    bounce_start_time: Optional[datetime] = None              # 눌림목 반등 시작 (조건 충족) 시점
+    bounce_achieved: bool = False                             # 한 번이라도 반등 목표가를 터치했는지 여부
     
     def update(self, price: float, total_volume: int):
         """실시간 시세 업데이트"""
@@ -73,17 +75,21 @@ class VWAPState:
         self.last_price = price
         if price > self.day_high:
             self.day_high = price
+            self.pullback_low = price  # 고점 갱신 시 바닥 초기화
+        
+        # 고점 대비 하락 중일 때 바닥 갱신
+        if price < self.pullback_low:
+            self.pullback_low = price
+            self.bounce_start_time = None
+            self.bounce_achieved = False
+        
         if price < self.day_low:
             self.day_low = price
         
-        # 최근 가격 기록 (최대 20개 유지)
+        # 최근 가격 기록 (최대 20개 유지) - 이제 반등 판단보다는 단순 로깅용으로 사용
         self.recent_prices.append(price)
         if len(self.recent_prices) > 20:
             self.recent_prices = self.recent_prices[-20:]
-        
-        # 최근 10틱 저점 업데이트
-        if len(self.recent_prices) >= 3:
-            self.recent_low = min(self.recent_prices[-10:])
             
         # VWAP 히스토리 기록 (최대 100개 유지)
         if self.vwap > 0:

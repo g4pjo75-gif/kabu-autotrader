@@ -67,6 +67,14 @@ base_config = {
     "end_time": "15:00",
     "us_market_filter": False,
     "us_market_threshold": 1.0,
+    "vwap_upper_band": 1.5,
+    "vwap_lower_band": 1.5,
+    "vwap_bounce_ratio": 20.0,
+    "vwap_bounce_wait_minutes": 2.0,
+    "min_pullback_pct": 1.2,
+    "max_pullback_pct": 5.0,
+    "vwap_absolute_min_bounce_pct": 0.8,
+    "vwap_breakdown_limit_pct": 1.0,
 }
 
 # 3. Register 18 configs

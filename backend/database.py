@@ -231,6 +231,23 @@ class Database:
             ))
             return cursor.lastrowid
 
+    def update_trade_price(self, order_id: str, new_price: float, new_pnl: Optional[float] = None):
+        """Update the executed price (and optionally PnL) of a trade."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if new_pnl is not None:
+                cursor.execute("""
+                    UPDATE trade_history 
+                    SET price = ?, realized_pnl = ?
+                    WHERE order_id = ?
+                """, (new_price, new_pnl, order_id))
+            else:
+                cursor.execute("""
+                    UPDATE trade_history 
+                    SET price = ?
+                    WHERE order_id = ?
+                """, (new_price, order_id))
+
     def get_trades(
         self, 
         symbol: Optional[str] = None,

@@ -237,6 +237,8 @@ class Universe:
         gap_max: float = 5.0,
         max_rise_from_open_pct: float = 2.5,
         max_buy_price: float = 0,
+        start_rank: int = 1,
+        min_turnover_mil: float = 500.0,
     ) -> tuple:
         """
         당일 주도주 추출 (Ranking API + 보조 랭킹 교집합 + 갭상승률 필터링).
@@ -256,6 +258,9 @@ class Universe:
             gap_min: 갭상승률 하한 (%) - 이 이상만 포함
             gap_max: 갭상승률 상한 (%) - 이 이하만 포함
             max_rise_from_open_pct: 시가 대비 최대 상승률 (%) - 초과 시 제외 (스파이크 방지)
+            max_buy_price: 최대 매수 가격 제한
+            start_rank: 이 순위부터 추출 시작 (예: 20이면 1~19위 스킵)
+            min_turnover_mil: 최소 거래대금 (백만엔) - 유동성 부족한 잡주 제외
             
         Returns:
             Tuple of (filtered_leaders: List[Dict], full_log: List[Dict])
@@ -318,11 +323,16 @@ class Universe:
                     _logger.warning("[Universe] Secondary Ranking API returned empty response. Ignored.")
             
             # 3. 상위 N개 슬라이싱
+            start_idx = max(0, start_rank - 1)
+            if start_idx > 0:
+                _logger.info(f"[Universe] Skipping top {start_idx} items due to start_rank={start_rank}")
+                ranking = ranking[start_idx:]
+                
             top_items = ranking[:count]
             
             # 4. 갭상승률 및 ETF 필터링 (로그 기록 포함)
             filtered = []
-            ranking_pos = 0
+            ranking_pos = start_idx
             for item in top_items:
                 symbol = str(item.get("Symbol", ""))
                 name = item.get("SymbolName", "")
@@ -379,13 +389,14 @@ class Universe:
                     full_log.append(log_entry)
                     continue
                 
-                # [가격 상한 필터] - 갭 필터 전에 적용하여 고가 종목 조기 제거
+                # [가격 상한 필터] - 고가 종목 조기 제거
                 if max_buy_price > 0 and current_price >= max_buy_price:
                     _logger.info(f"[Universe] ⏭️ 가격 초과 제외: {symbol} ({name}) 현재가 ¥{current_price:,.0f} >= 상한 ¥{max_buy_price:,.0f}")
                     log_entry["filter_result"] = "가격초과"
                     log_entry["filter_detail"] = f"현재가 ¥{current_price:,.0f} >= 상한 ¥{max_buy_price:,.0f}"
                     full_log.append(log_entry)
                     continue
+
                 
                 # 필터: gap_min% <= gap_pct <= gap_max%
                 if gap_pct < gap_min:
@@ -429,36 +440,48 @@ class Universe:
                     log_entry = f_item.pop("_log_entry")
                     
                     if isinstance(board, Exception):
-                        _logger.warning(f"[Universe] {f_item['symbol']} 시가 조회 중 예외 발생: {board}. 리스트에 유지합니다.")
-                        log_entry["filter_result"] = "PASS"
-                        log_entry["filter_detail"] = "시가 조회 실패 (유지)"
+                        _logger.warning(f"[Universe] ❌ {f_item['symbol']} 시가 조회 중 예외 발생: {board}. 대상에서 제외합니다.")
+                        log_entry["filter_result"] = "API조회실패"
+                        log_entry["filter_detail"] = f"조회 예외: {board}"
                         full_log.append(log_entry)
-                        final_filtered.append(f_item)
                         continue
-                    
+
                     if not board:
-                        log_entry["filter_result"] = "PASS"
+                        _logger.warning(f"[Universe] ❌ {f_item['symbol']} 보드 데이터 없음(None). 대상에서 제외합니다.")
+                        log_entry["filter_result"] = "API조회실패"
+                        log_entry["filter_detail"] = "시가 데이터 없음"
                         full_log.append(log_entry)
-                        final_filtered.append(f_item)
                         continue
                     
                     open_price = board.open_price
                     curr_price = board.current_price if board.current_price > 0 else f_item["current_price"]
+                    board_volume = board.volume if hasattr(board, 'volume') else 0
+                    
                     log_entry["open_price"] = float(open_price) if open_price else 0.0
                     log_entry["current_price"] = float(curr_price)
+                    log_entry["volume"] = int(board_volume)
                     
+                    # [버그 수정] 랭킹 API의 지연된 거래량 대신, 실시간 보드 거래량으로 업데이트하여 
+                    # automation_service.py에서 거래대금 점수를 정확하게 계산하도록 수정
+                    f_item["volume"] = int(board_volume)
+                    
+                    # [유동성(거래대금) 필터 2단계] - 거래량이 0인 종목도 거래대금 0엔으로 간주하여 필터링
+                    # 최후의 안전장치: 파라미터가 0 이하로 들어오더라도 최소 100(1억 엔) 강제 적용
+                    safe_min_turnover_mil = max(float(min_turnover_mil), 100.0)
+                    board_turnover = board_volume * curr_price if board_volume > 0 else 0
+                    min_turnover_yen = safe_min_turnover_mil * 1_000_000
+                    
+                    if board_turnover < min_turnover_yen:
+                        _logger.info(f"[Universe] ❌ 유동성(거래대금) 미달 제외: {f_item['symbol']} ({f_item['name']}) - 거래대금 ¥{board_turnover:,.0f} < 하한 ¥{min_turnover_yen:,.0f}")
+                        log_entry["filter_result"] = "거래대금미달"
+                        log_entry["filter_detail"] = f"보드거래대금 ¥{board_turnover/1_000_000:,.1f}M < 하한 {safe_min_turnover_mil}M"
+                        full_log.append(log_entry)
+                        continue
+                            
                     # 시가 정보가 있고 시장이 열려 있는 경우
                     if open_price > 0:
-                        # 시가 대비 약세 필터: 현재가가 시가보다 낮으면(음봉) 제외
-                        if curr_price < open_price:
-                            _logger.info(
-                                f"[Universe] ❌ 시가 대비 약세 종목 제외: {f_item['symbol']} ({f_item['name']}) "
-                                f"시가=¥{open_price:,.1f}, 현재가=¥{curr_price:,.1f} (음봉/갭락세)"
-                            )
-                            log_entry["filter_result"] = "시가약세"
-                            log_entry["filter_detail"] = f"현재가 ¥{curr_price:,.0f} < 시가 ¥{open_price:,.0f} (음봉)"
-                            full_log.append(log_entry)
-                            continue
+                        # [제거됨] 시가 대비 약세 필터: 아침 눌림목(Morning Dip) 종목도 감시 대상에 포함하기 위해 제거
+                        # trading_service의 VWAP 방어막(과도하락, 심층붕괴, 반등부족 등)이 위험한 종목을 충분히 걸러줌
                         
                         # [NEW] 시가 대비 과도한 상승 필터: 아침 스파이크 꼭대기 매수 방지
                         rise_from_open = ((curr_price - open_price) / open_price) * 100 if open_price > 0 else 0
